@@ -1,108 +1,143 @@
-import { getEater } from "@/lib/queries";
+// Public marketing landing.
+//
+// Anonymous: hero + value prop + CTAs.
+// Signed-in: same page + a "continue to feed" affordance — we don't redirect
+// away from /, since the URL is the natural share target. The header already
+// shows their identity.
+//
+// The four feed-shape variants live at /a /b /c /d (kept; /a is the lead).
+// The internal four-variant test menu lives at /test (unlinked from prod nav).
 
-export const dynamic = "force-dynamic";
+import Link from "next/link";
 
-const variants = [
-  {
-    letter: "A",
-    name: "Density",
-    hypothesis:
-      "The eater comes back because the sheer presence of options is the surprise.",
-    yes: "“wait, all of this is near me right now?”",
-    no: "“this is overwhelming.”",
-  },
-  {
-    letter: "B",
-    name: "One Perfect Match",
-    hypothesis:
-      "The eater comes back because relevance is the surprise — the app knows what they want.",
-    yes: "“this is exactly the kind of loaf I’d want.”",
-    no: "“I don’t trust the algorithm.”",
-  },
-  {
-    letter: "C",
-    name: "Coming Soon",
-    hypothesis:
-      "The eater comes back because anticipation is the surprise — bread is a thing-in-progress, not a thing-on-shelf.",
-    yes: "“I want to time my walk for the boule.”",
-    no: "“I just want bread, not a stakeout.”",
-  },
-  {
-    letter: "D",
-    name: "The Week",
-    hypothesis:
-      "The eater comes back because the bakery’s full upcoming schedule is the surprise — info they’ve never had before.",
-    yes: "“I had no idea I could see what they’re baking next Saturday.”",
-    no: "“I don’t plan bread purchases.”",
-  },
-] as const;
+export const metadata = {
+  title: "Breadly — fresh bread, made today, near you.",
+  description:
+    "Boulder bakers post what they're making. Eaters claim a loaf before it cools.",
+};
 
-export default async function TestMenu() {
-  const eater = await getEater();
+export default function Landing() {
   return (
-    <div className="max-w-4xl mx-auto px-6 py-12">
-      <header className="mb-10">
-        <p className="text-xs uppercase tracking-widest text-stone-500 mb-2">
-          Breadly · feed-shape test
+    <main className="flex-1">
+      {/* Hero */}
+      <section className="px-6 pt-16 pb-20 max-w-5xl mx-auto">
+        <p className="text-xs uppercase tracking-[0.18em] text-amber-700 mb-5">
+          Boulder · time-bound bread
         </p>
-        <h1 className="text-4xl font-semibold tracking-tight text-stone-900 mb-3">
-          Four versions of the same home screen.
+        <h1 className="text-5xl md:text-6xl font-semibold tracking-tight text-stone-900 leading-[1.05] max-w-3xl">
+          Fresh bread, made today, near you.
         </h1>
-        <p className="text-stone-600 max-w-2xl leading-relaxed">
-          Same neighborhood, same baker pool, same simulated eater (loves
-          sourdough, no rye, within 2 miles of {eater.neighborhood}). The only
-          variable is how the feed is shaped. Click into each, then tell us
-          which one made you actually want to come back tomorrow — and which
-          made you close the app.
+        <p className="mt-6 text-lg text-stone-600 max-w-2xl leading-relaxed">
+          Boulder bakers post what's coming out of the oven this afternoon.
+          You see what's nearby — what's still warm — and claim a loaf before
+          it cools.
         </p>
-      </header>
+        <div className="mt-8 flex flex-wrap gap-3">
+          <Link
+            href="/a"
+            className="bg-stone-900 text-white rounded-md px-5 py-3 text-sm font-medium hover:bg-stone-700 transition"
+          >
+            Browse what's baking
+          </Link>
+          <Link
+            href="/sign-up"
+            className="border border-stone-300 rounded-md px-5 py-3 text-sm font-medium text-stone-800 hover:border-stone-500 transition"
+          >
+            I bake — let me post
+          </Link>
+        </div>
+      </section>
 
-      <ol className="space-y-3">
-        {variants.map((v) => (
-          <li key={v.letter}>
-            <a
-              href={`/${v.letter.toLowerCase()}`}
-              className="block group rounded-xl border border-stone-200 bg-white px-6 py-5 hover:border-stone-400 hover:shadow-sm transition"
-            >
-              <div className="flex items-baseline gap-4 mb-2">
-                <span className="text-3xl font-semibold text-stone-300 group-hover:text-amber-600 transition">
-                  {v.letter}
-                </span>
-                <h2 className="text-xl font-semibold text-stone-900">
-                  {v.name}
-                </h2>
-                <span className="ml-auto text-sm text-stone-400 group-hover:text-stone-700 transition">
-                  open →
-                </span>
-              </div>
-              <p className="text-sm text-stone-600 mb-2 leading-relaxed">
-                {v.hypothesis}
+      {/* How it works */}
+      <section className="border-y border-stone-200 bg-white">
+        <div className="px-6 py-16 max-w-5xl mx-auto">
+          <h2 className="text-sm font-semibold uppercase tracking-widest text-stone-500 mb-10">
+            How it works
+          </h2>
+          <ol className="grid md:grid-cols-3 gap-10">
+            <li>
+              <div className="text-3xl font-semibold text-amber-700 mb-3">01</div>
+              <h3 className="text-lg font-semibold mb-2">A baker posts a loaf</h3>
+              <p className="text-stone-600 text-sm leading-relaxed">
+                A home baker or small bakery says: country sourdough, four
+                loaves, out of the oven at 3pm, ten dollars. Thirty seconds,
+                done.
               </p>
-              <div className="text-xs text-stone-500 flex flex-wrap gap-x-6 gap-y-1">
-                <span>
-                  <span className="text-emerald-600">yes →</span> {v.yes}
-                </span>
-                <span>
-                  <span className="text-rose-600">no →</span> {v.no}
-                </span>
-              </div>
-            </a>
-          </li>
-        ))}
-      </ol>
+            </li>
+            <li>
+              <div className="text-3xl font-semibold text-amber-700 mb-3">02</div>
+              <h3 className="text-lg font-semibold mb-2">You see what's near</h3>
+              <p className="text-stone-600 text-sm leading-relaxed">
+                Open the app. Loaves within a couple miles, with the time
+                they'll be ready and what's already gone. No chasing, no
+                guessing.
+              </p>
+            </li>
+            <li>
+              <div className="text-3xl font-semibold text-amber-700 mb-3">03</div>
+              <h3 className="text-lg font-semibold mb-2">Claim it; pick it up</h3>
+              <p className="text-stone-600 text-sm leading-relaxed">
+                One tap to claim. Walk over at the ready time. Show your
+                pickup code, take your bread home while it's still warm.
+              </p>
+            </li>
+          </ol>
+        </div>
+      </section>
 
-      <footer className="mt-12 pt-6 border-t border-stone-200 text-xs text-stone-500 leading-relaxed">
-        <p className="mb-2">
-          <strong>How to run the test:</strong> show the four variants in a
-          random order. After each one, ask: <em>“if this were the app, would
-          you open it again tomorrow? Why?”</em> Watch for visceral reactions —
-          polite approval is failure.
-        </p>
-        <p>
-          Build the test to invite a fifth answer (“none of these — what I want
-          is X”). That would be the most valuable possible result.
-        </p>
+      {/* For bakers */}
+      <section className="px-6 py-16 max-w-5xl mx-auto">
+        <div className="grid md:grid-cols-2 gap-12 items-start">
+          <div>
+            <h2 className="text-3xl font-semibold tracking-tight text-stone-900 mb-4">
+              If you bake, the listing is the post.
+            </h2>
+            <p className="text-stone-600 leading-relaxed mb-4">
+              No storefront, no inventory system, no batch reconciliation. Tell
+              Breadly what's in the oven and when it'll be ready — that's the
+              listing. Sell out and disappear; come back when you bake again.
+            </p>
+            <p className="text-stone-600 leading-relaxed">
+              Recurring schedules cover the loaves you make every Tuesday.
+              One-off posts cover the experiments. Both go to the same
+              neighborhood feed.
+            </p>
+          </div>
+          <div className="rounded-xl border border-stone-200 bg-white p-6">
+            <p className="text-xs uppercase tracking-widest text-stone-500 mb-3">
+              What a post looks like
+            </p>
+            <p className="font-semibold text-stone-900 mb-1">Country sourdough</p>
+            <p className="text-sm text-stone-600 mb-3">
+              Long-fermented, dark crust. Out of the oven at 3pm.
+            </p>
+            <div className="flex gap-3 text-sm text-stone-700">
+              <span>$10</span>
+              <span className="text-stone-400">·</span>
+              <span>4 loaves</span>
+              <span className="text-stone-400">·</span>
+              <span>0.7 mi</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Footer */}
+      <footer className="border-t border-stone-200 bg-stone-100">
+        <div className="px-6 py-10 max-w-5xl mx-auto text-sm text-stone-600">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <span className="font-semibold text-stone-900">Breadly</span>
+            <nav className="flex gap-5">
+              <Link href="/a" className="hover:text-stone-900">Browse</Link>
+              <Link href="/sign-up" className="hover:text-stone-900">Become a baker</Link>
+            </nav>
+          </div>
+          <p className="mt-6 text-xs text-stone-500 max-w-xl leading-relaxed">
+            Operating in Boulder, Colorado. Cottage-food licensed bakers only;
+            standard food-safety practices apply.
+          </p>
+        </div>
       </footer>
-    </div>
+    </main>
   );
 }
