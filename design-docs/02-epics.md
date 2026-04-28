@@ -56,8 +56,9 @@ Engineering decomposition of `01-product-design.md` into shippable epics, sequen
 | **M3** | Engagement loops | "Eaters come back; bounties pull supply" | E9 · E10 |
 | **M4** | Mock veneer | "Looks and feels like a real product end-to-end" | E11 · E12 · E13 |
 | **M5** | The moat + polish | "Bakers see demand; everything updates live" | E14 · E15 |
+| **MD** | **Demo-ready cut (investor-shaped)** | "Walk an investor through baker + eater + admin in 10 minutes" | **ED1 · ED2 · ED3 · ED4 · ED5** |
 
-Total: 15 epics across 5 milestones. Each milestone ends with a working demo.
+Total: 15 slice-epics across 5 milestones, plus 5 demo-shaped rollup epics (ED1–ED5) defined further down. Slice-epics are how the work is decomposed; demo-epics are how "done enough to show" is measured.
 
 ---
 
@@ -342,6 +343,99 @@ Per `01-product-design.md` §7: anything a normal user would interact with gets 
 - Internationalization beyond the cosmetic region picker noted in `01-product-design.md` §7.
 - Pricing model for Breadly itself (take rate? subscription? listing fee?). Mocked at E11; a real answer is a future business question.
 - Specific rollout cities for the real-business read. The portfolio read doesn't need this; the real-business read decides it after running the feed-shape test from `compass/`.
+
+---
+
+## Demo-Ready Cut (post-M0, investor-shaped)
+
+The M0–M5 plan above is the engineering decomposition. The five epics below are the *demo-shaped* rollups: each one is a coherent thing an investor can be walked through in 2–3 minutes, and each is the gate to the next. They reference the slice-epics above rather than duplicating their scope — when ED1 says "rolls up E3 + E7 + E8," that means those slice-epics are the work, and ED1 is the integration + polish that turns a working slice into a demoable surface.
+
+Sequencing is `ED4 → (ED1 ∥ ED2) → ED5 → ED3`. ED4 (dev-tools) ships first because every demo of ED1/ED2/ED3 depends on being able to seed a representative state in seconds. ED5 (real map) lands after the workflows are real, so map pins point at real listings. ED3 (admin) lands last because it's the lowest-traffic surface and depends on having real users + listings + reports to moderate.
+
+### ED4 — Dev-tools panel (seeded reality on demand)
+
+- **Goal:** any demo state is a one-click load. Seed packs, time-travel, user impersonation, DB reset — all behind a gated `/dev-tools` route. This is the **prerequisite** for demoing anything else convincingly: an investor walkthrough can't survive a "let me just create five bakers and twelve listings real quick."
+- **Scope (in):**
+  - `/dev-tools` route, gated by env (dev/staging only) **and** a `canDev` capability flag on `users` (so prod-deployed dev builds don't accidentally expose it). Server-side guard, not just UI hide. [LAW:single-enforcer]
+  - **Seed packs:** named, idempotent, parameterized — `pack:weekend-morning` (30 bakers, ~100 active listings, ~20 in-progress claims, mid-Saturday timestamp), `pack:sparse-tuesday` (5 bakers, sparse listings, surfaces empty-state UI), `pack:bounty-pressure` (heavy demand, light supply — exercises ED2 reverse channel), `pack:reset` (wipe to E1 baseline + Boulder bakers). One file per pack under `web/src/db/seed-packs/`.
+  - **Time-travel:** a single `system_clock` row in DB; all server code reads `now()` through one helper; dev-tools can set it forward/back. Lets us materialize tomorrow's scheduled bakes today for a demo. [LAW:one-source-of-truth]
+  - **Impersonation:** dev can jump into any seeded user's session (signed audit log row written every time). Critical for showing baker → eater handoff in a single demo without juggling two browsers.
+  - **DB inspector:** read-only table list + row counts + last-mutation timestamps. Catches "the demo broke because seed didn't run."
+  - **Reset confirms:** any destructive action requires a typed-in pack name, not a single click.
+- **Scope (out):** writing to prod (panel is hard-disabled there); a generic schema-edit UI; replay/recording.
+- **Dependencies:** E1 (schema + initial seed exist).
+- **Workflows covered:** none directly — unblocks reliable demos of every other workflow.
+- **Done when:**
+  1. From a freshly-deployed dev environment, loading `pack:weekend-morning` produces the same exact state every time, in <5s.
+  2. Time-traveling +24h causes scheduled bakes to materialize as `ready` listings without code changes.
+  3. Impersonating a baker, posting a loaf, then impersonating an eater and claiming it works in a single browser, in <60s.
+  4. The panel returns 404 in production builds.
+
+### ED1 — Full baker workflow (post → schedule → run a day → storefront → ratings)
+
+- **Goal:** a baker can be onboarded, run a full week of bakes (recurring schedule + one-offs), execute a Saturday morning of handoffs from one screen, and have a public storefront URL that looks credible when pasted into Instagram.
+- **Rolls up:** E2 (baker capability) · E3 (post-a-loaf, tags) · E4 (handoff side) · E6 (storefront) · E7 (schedule + recurring) · E8 (today screen + ratings).
+- **Demo path:** sign up → claim baker → set slug + bio + address → post one-off loaf (<30s) → set up recurring Tue+Fri schedule → time-travel to Saturday → today screen shows two ready listings + one claimed → mark handoff → rate the eater → check `/b/<slug>` from a logged-out browser.
+- **Scope (in):** all the slice-epic scopes above, *integrated*: shared nav, consistent empty states, a single onboarding flow that walks a new baker from sign-up to first listing in <2 minutes. Photo upload via signed URLs to `breadly-{env}-uploads` (already in IaC).
+- **Scope (out):** payouts (ED-future / E11); identity verification UI (E12); demand insights (E14); subscriptions (handled in ED2's "follow" subset).
+- **Dependencies:** ED4 (need seedable state to develop against), E2 mostly done.
+- **Done when:** the demo path above runs end-to-end in a single browser session against a freshly-seeded `pack:weekend-morning`, with no refresh hacks, in under 4 minutes wall-clock.
+
+### ED2 — Full bread-seeker workflow (find → claim → pick up → rate → follow)
+
+- **Goal:** an eater can sign up, set a neighborhood + preferences, find loaves they want via the home feed (variant A, real DB), see fuzzy locations pre-claim and exact addresses post-claim, claim, walk through a pickup code handoff, rate the baker, follow them, and receive a notification the next time that baker schedules a bake.
+- **Rolls up:** E2 (eater identity) · E3 (listing detail) · E4 (claim/handoff eater side) · E5 (home feed, variant A as default) · E9 (follow + notifications, subset: follow-baker only — tag-set follows + bounties move to a later cut).
+- **Demo path:** sign up → enter neighborhood (Newlands) → home feed shows nearby loaves with fuzzed pins → pick a country sourdough → claim → pickup code + exact address revealed → handoff (paired with ED1 baker side) → rate baker → follow → time-travel to next scheduled bake → in-app notification + email arrives.
+- **Scope (in):** integrated nav with capability-aware affordances (already started in `Header.tsx`), preference editor (W16), email notifications via Resend.
+- **Scope (out):** bounties (E10 / future cut); subscriptions/auto-claim (E9 subset); web push.
+- **Dependencies:** ED4, ED1 (so a real baker exists to find/claim/follow).
+- **Done when:** the demo path above runs end-to-end against the same seed pack ED1 uses, and the follow→schedule→notify loop fires within ~30s of the scheduled bake materializing.
+
+### ED5 — Real, live, working map
+
+- **Goal:** replace `FakeMap` in variant A and any future map surface with a real MapLibre GL map tiled from our own Cloud Storage bucket, showing real lat/lng pins driven by PostGIS radius queries, with the privacy gradient enforced on pin coordinates server-side. This is also the first map that lands in `/baker/today` (where listings are baking) and `/b/<slug>` (storefront kitchen pin).
+- **Scope (in):**
+  - **Tiles:** Protomaps `.pmtiles` for the Boulder bounding box, uploaded to the existing `breadly-dev-tiles` / `breadly-prod-tiles` buckets (E1 IaC already created them — they're empty). Pre-publish step in `infra/` README; tile build script under `web/scripts/build-tiles.sh`.
+  - **Map component:** one `<Map>` React component used by all map surfaces. Props: pins (with discriminated `state` for color), bounds, center, onPinClick. No callsite reaches into MapLibre directly. [LAW:single-enforcer, LAW:locality-or-seam]
+  - **Privacy at the data layer, not the view:** server-side `getNearbyListingsForMap()` returns *already-fuzzed* coordinates for unclaimed listings (deterministic ~200m jitter seeded by listing id, so the pin doesn't dance between page loads), and exact coordinates only for the claimer of a listing. The client never receives the exact lat/lng for a loaf it hasn't claimed. [LAW:single-enforcer for privacy]
+  - **List+map sync** in variant A: hovering a card highlights its pin and vice-versa. Selecting a pin scrolls its card into view.
+  - **Geolocation consent:** "Use my location" button → browser prompt → centers map; otherwise default to neighborhood centroid.
+  - **Pan/zoom limits:** locked to ~Boulder metro to prevent wandering off the tiled area.
+- **Scope (out):** routing/directions (deep-link to Google/Apple Maps for now); heatmaps (defer to E14 demand insights); custom map style beyond Protomaps default.
+- **Dependencies:** E1 (buckets exist), ED4 (seeded data with real lat/lng), ED2 (privacy gradient kicks in on claim).
+- **Done when:**
+  1. Variant A renders a real Boulder map with pins matching the listings shown in the cards on its right.
+  2. Hovering a card highlights its pin; clicking a pin scrolls the card into view.
+  3. Inspecting the network response for an unclaimed listing shows fuzzed coordinates only.
+  4. After claim, the listing-detail page reveals the exact address + a map centered on it.
+  5. Tiles served from our own bucket (no Mapbox/MapTiler tokens in the bundle).
+
+### ED3 — Admin / operator panel
+
+- **Goal:** the third role surface — an operator can moderate users + listings, review verification submissions, resolve reports, and watch system health from one console.
+- **Rolls up:** E13 (operator console) + adds the system-health + audit-log pieces beyond E13's original scope, since by the time we ship this we'll have ED1/ED2 data to moderate.
+- **Scope (in):**
+  - `/admin` route, gated by `canOperate`. (Distinct from `/dev-tools` — dev-tools mutates seeded reality; admin acts on real production state.)
+  - **Reports queue:** flagged listings, reported users, dispute claims (no-show on either side). Each row → detail view with full context + action buttons (suspend, take-down, resolve).
+  - **Verification review:** pending baker verifications from E12 (mocked-pipeline OK, real moderator action). Approve / request-more / reject.
+  - **User search + actions:** find user by email/slug, view their listings/claims/ratings, suspend or unsuspend (status flow only).
+  - **System health:** counts of users / active listings / claims today / handoffs / no-show rate / report rate, with deltas vs yesterday. Powered by aggregate queries, not a separate analytics store.
+  - **Audit log:** every admin action writes a row (`actor`, `target_type`, `target_id`, `action`, `reason`, `at`). Visible in-panel and queryable by support.
+- **Scope (out):** ML-driven abuse detection; SLA timers; ticketing system; bulk operations.
+- **Dependencies:** E12 (verification flow exists, even if KYC is mocked), ED1 + ED2 (so there are real users + listings to moderate), ED4 (so we can seed an "admin needs to review 3 reports + 2 verifications + 1 dispute" demo state).
+- **Done when:** an operator, starting from `/admin` against `pack:admin-loaded`, can suspend a user, take down a listing, approve a verification, and resolve a dispute — and every action shows up in the audit log within the same session.
+
+### Demo-cut sequencing summary
+
+| Order | Epic | Why now |
+|---|---|---|
+| 1 | ED4 dev-tools | Every other demo's reliability depends on it |
+| 2a | ED1 baker workflow | Either order works; build in parallel |
+| 2b | ED2 eater workflow | Either order works; build in parallel |
+| 3 | ED5 real map | Both workflows now produce real lat/lng to plot |
+| 4 | ED3 admin panel | Lowest-traffic surface; needs real data to moderate |
+
+The five-epic cut deliberately defers payments (E11), bounties (E10), demand insights (E14), and real-time SSE (E15) — all of those are *additive* veneer/moat work that lands cleanly on top of ED1–ED5 once the core surfaces are real. None of them is on the investor-demo critical path.
 
 ---
 
