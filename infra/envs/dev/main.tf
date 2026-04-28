@@ -80,4 +80,5 @@ module "runtime" {
   clerk_publishable_key    = var.clerk_publishable_key
   min_instances            = 0
   max_instances            = 4
+  dev_mode                 = true
 }

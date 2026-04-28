@@ -10,8 +10,8 @@ import { eq } from "drizzle-orm";
 import { requireDevBootstrap } from "@/lib/dev-tools-gate";
 
 // ED4-1 bootstrap: signed-in user grants themselves canDev. Allowed only
-// when BREADLY_ENABLE_DEV_TOOLS=true (enforced by requireDevBootstrap).
-// In prod the env gate is off, so this action 404s before touching the DB.
+// when BREADLY_DEV_MODE=true (enforced by requireDevBootstrap). In prod the
+// env gate is off, so this action 404s before touching the DB.
 export async function enableSelfDev(): Promise<void> {
   const { userId } = await requireDevBootstrap();
   await db

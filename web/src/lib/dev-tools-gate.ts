@@ -2,10 +2,13 @@
 // action, and API route under /dev-tools calls one of these helpers — there
 // is no second check anywhere. Two checks must both pass:
 //
-//   1. Env gate: NODE_ENV !== "production". The Next build sets this to
-//      "production" in Cloud Run images, so the panel 404s there with no
-//      env-var bookkeeping. Dev/staging keep their natural NODE_ENV and
-//      the panel renders.
+//   1. Env gate: BREADLY_DEV_MODE === "true". This is the single flag that
+//      gates *all* dev/test functionality across the app — not just this
+//      panel. Default-closed: prod Cloud Run revisions don't set it and
+//      404 here regardless of capability. The dev Cloud Run service and
+//      local docker-compose set it to "true". Stays on until we onboard
+//      real customers, at which point it gets removed from the dev
+//      service env.
 //
 //   2. Capability gate: the user must have canDev=true in the local users
 //      row. Mirrors the canBake/canOperate pattern.
@@ -19,8 +22,12 @@ import { db } from "@/db/client";
 import { users } from "@/db/schema";
 import { eq } from "drizzle-orm";
 
-export function isDevToolsEnvEnabled(): boolean {
-  return process.env.NODE_ENV !== "production";
+// Single source of truth for "is this a dev/test environment." Any future
+// dev-only feature reads this same helper — there's only one flag to set,
+// and it gates the whole dev surface.
+// [LAW:one-source-of-truth]
+export function isDevModeEnabled(): boolean {
+  return process.env.BREADLY_DEV_MODE === "true";
 }
 
 export type DevToolsViewer = {
@@ -32,7 +39,7 @@ export type DevToolsViewer = {
 // triggers Next's notFound() otherwise. Never returns null — callers can
 // treat the return value as "definitely allowed."
 export async function requireDevTools(): Promise<DevToolsViewer> {
-  if (!isDevToolsEnvEnabled()) notFound();
+  if (!isDevModeEnabled()) notFound();
 
   const { userId } = await auth();
   if (!userId) notFound();
@@ -50,7 +57,7 @@ export async function requireDevTools(): Promise<DevToolsViewer> {
 // the first time. Allowed only when the env gate is on. Distinct from
 // requireDevTools because the user *doesn't yet* have the capability.
 export async function requireDevBootstrap(): Promise<{ userId: string }> {
-  if (!isDevToolsEnvEnabled()) notFound();
+  if (!isDevModeEnabled()) notFound();
   const { userId } = await auth();
   if (!userId) notFound();
   return { userId };

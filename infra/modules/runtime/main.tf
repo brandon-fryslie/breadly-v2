@@ -35,6 +35,16 @@ variable "min_instances" {
   type    = number
   default = 0
 }
+
+// Single switch for the whole dev/test surface. When true the Cloud Run
+// revision gets BREADLY_DEV_MODE=true, which gates /dev-tools (and any
+// future dev-only feature). Default false; only the dev env sets it.
+// [LAW:single-enforcer]
+variable "dev_mode" {
+  type        = bool
+  default     = false
+  description = "Emit BREADLY_DEV_MODE=true on the service. Dev only; never set in prod."
+}
 variable "max_instances" {
   type    = number
   default = 4
@@ -108,6 +118,16 @@ resource "google_cloud_run_v2_service" "web" {
       env {
         name  = "BREADLY_ENV"
         value = var.env
+      }
+      // [LAW:single-enforcer] Sole flag for /dev-tools (and any future
+      // dev-only surface). dev_mode=false → omitted entirely so the gate
+      // can't accidentally read a stale value.
+      dynamic "env" {
+        for_each = var.dev_mode ? [1] : []
+        content {
+          name  = "BREADLY_DEV_MODE"
+          value = "true"
+        }
       }
       env {
         name  = "CLOUDSQL_CONNECTION_NAME"

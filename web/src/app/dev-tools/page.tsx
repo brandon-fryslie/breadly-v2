@@ -7,7 +7,7 @@
 // or requireDevBootstrap().
 
 import {
-  isDevToolsEnvEnabled,
+  isDevModeEnabled,
   requireDevBootstrap,
 } from "@/lib/dev-tools-gate";
 import { auth } from "@clerk/nextjs/server";
@@ -22,7 +22,7 @@ export const dynamic = "force-dynamic";
 export default async function DevToolsHome() {
   // Env gate (single-enforcer) — but we render the bootstrap UI for
   // signed-in users without canDev, so we don't use requireDevTools() here.
-  if (!isDevToolsEnvEnabled()) notFound();
+  if (!isDevModeEnabled()) notFound();
   const { userId } = await requireDevBootstrap();
 
   const me = await db.query.users.findFirst({
@@ -35,7 +35,7 @@ export default async function DevToolsHome() {
     <main className="max-w-3xl mx-auto px-6 py-10 space-y-8">
       <header>
         <p className="text-xs uppercase tracking-widest text-amber-700 mb-2">
-          Dev tools · {process.env.NODE_ENV}
+          Dev tools · BREADLY_DEV_MODE=true
         </p>
         <h1 className="text-3xl font-semibold tracking-tight">
           Seeded reality on demand
@@ -62,8 +62,9 @@ function BootstrapShell({
       <h2 className="text-lg font-semibold mb-1">Enable dev tools for yourself</h2>
       <p className="text-sm text-stone-700 mb-4">
         Signed in as <strong>{viewer.displayName}</strong> ({viewer.email}). Dev
-        tools is opt-in per user. Granting it to yourself works only in non-production builds; this
-        page 404s in prod regardless of capability.
+        tools is opt-in per user. Granting it to yourself works only when{" "}
+        <code>BREADLY_DEV_MODE=true</code> on this deployment. Production
+        doesn't set it, so this page 404s there regardless of capability.
       </p>
       <form action={enableSelfDev}>
         <button
