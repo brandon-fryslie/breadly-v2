@@ -8,6 +8,9 @@ const isProtected = createRouteMatcher([
   "/baker(.*)",
   "/operator(.*)",
   "/me(.*)",
+  // /dev-tools has its own env+capability gate in src/lib/dev-tools-gate.ts;
+  // we still require a Clerk session at the edge so the gate can read userId.
+  "/dev-tools(.*)",
 ]);
 
 export default clerkMiddleware(async (auth, req) => {

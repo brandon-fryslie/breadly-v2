@@ -88,6 +88,11 @@ export const users = pgTable(
     // baker and operator are opt-in. (one-type-per-behavior law)
     canBake: boolean("can_bake").notNull().default(false),
     canOperate: boolean("can_operate").notNull().default(false),
+    // [LAW:one-type-per-behavior] Dev-tools is a capability flag, not a
+    // separate user kind. The /dev-tools panel additionally requires the
+    // server to be running in a non-prod env (single-enforcer gate in
+    // src/lib/dev-tools-gate.ts).
+    canDev: boolean("can_dev").notNull().default(false),
 
     // Address geocoded once at save. Optional for eaters (some users only
     // browse maps); required when canBake=true (enforced at app layer).
