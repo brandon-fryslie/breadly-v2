@@ -1,7 +1,9 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  // Standalone output bundles only what's needed for `node server.js`,
+  // so the runtime image stays small.
+  output: "standalone",
 };
 
 export default nextConfig;

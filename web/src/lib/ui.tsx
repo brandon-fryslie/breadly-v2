@@ -1,6 +1,6 @@
 // Shared UI atoms used across the four feed variants.
 
-import { Tag } from "./data";
+import type { UiTag } from "./types";
 
 export const TestBanner = ({ variant, label }: { variant: "A" | "B" | "C" | "D"; label: string }) => (
   <div className="bg-amber-50 border-b border-amber-200 px-4 py-2 text-xs text-amber-900 flex items-center justify-between gap-4">
@@ -42,7 +42,7 @@ export const BreadImg = ({
   </div>
 );
 
-export const TagPill = ({ tag, dim = false }: { tag: Tag | string; dim?: boolean }) => (
+export const TagPill = ({ tag, dim = false }: { tag: UiTag; dim?: boolean }) => (
   <span
     className={`inline-block text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded ${
       dim ? "bg-stone-100 text-stone-500" : "bg-stone-200 text-stone-700"

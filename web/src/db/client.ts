@@ -1,35 +1,53 @@
 // Singleton Drizzle client. On Cloud Run the DATABASE_URL points at the
 // Cloud SQL Auth Proxy unix socket (`host=/cloudsql/<connection>`); locally
 // it points at docker-compose Postgres on tcp.
+//
+// Lazy: we don't read DATABASE_URL until the first query. This lets the
+// container build (`next build`) succeed without a live DATABASE_URL.
 
 import { drizzle } from "drizzle-orm/postgres-js";
-import postgres from "postgres";
+import postgres, { type Sql } from "postgres";
 import * as schema from "./schema";
 
 declare global {
   // eslint-disable-next-line no-var
-  var __breadly_pg__: postgres.Sql | undefined;
+  var __breadly_pg__: Sql | undefined;
 }
 
-function makeClient() {
+let _sql: Sql | undefined;
+function getSql(): Sql {
+  if (_sql) return _sql;
+  if (global.__breadly_pg__) {
+    _sql = global.__breadly_pg__;
+    return _sql;
+  }
   const url = process.env.DATABASE_URL;
   if (!url) {
     throw new Error("DATABASE_URL is not set");
   }
-  return postgres(url, {
-    // Cloud Run's container concurrency is high; keep pool small per instance.
+  _sql = postgres(url, {
     max: 5,
     idle_timeout: 20,
-    prepare: false, // avoid pgbouncer-style prepared-statement issues if we ever front with one
+    prepare: false,
   });
+  if (process.env.NODE_ENV !== "production") {
+    global.__breadly_pg__ = _sql;
+  }
+  return _sql;
 }
 
-// Reuse a single connection across hot reloads in dev.
-const sql = global.__breadly_pg__ ?? makeClient();
-if (process.env.NODE_ENV !== "production") {
-  global.__breadly_pg__ = sql;
+// Lazy proxy — calls into the underlying drizzle instance only on first
+// access. Build-time module evaluation can import `db` without triggering
+// a connection.
+function getDb() {
+  return drizzle(getSql(), { schema });
 }
 
-export const db = drizzle(sql, { schema });
-export { sql };
-export type DB = typeof db;
+export const db = new Proxy({} as ReturnType<typeof getDb>, {
+  get(_target, prop) {
+    return (getDb() as unknown as Record<string | symbol, unknown>)[prop as string];
+  },
+});
+
+export { getSql as sql };
+export type DB = ReturnType<typeof getDb>;

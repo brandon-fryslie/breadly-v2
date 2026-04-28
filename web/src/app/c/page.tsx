@@ -1,12 +1,16 @@
-import { listings, bakerById, fmtPrice, fmtTime } from "@/lib/data";
-import { TestBanner, BreadImg, TagPill, Stars } from "@/lib/ui";
+import { getNearbyListings } from "@/lib/queries";
+import { fmtPrice, fmtTime } from "@/lib/format";
+import { TestBanner, BreadImg } from "@/lib/ui";
+
+export const dynamic = "force-dynamic";
 
 // Variant C — Coming Soon.
 // Hypothesis: anticipation is the surprise. Bread as a thing-in-progress.
 // The feed is sorted by minutes-until-ready, with countdowns prominent.
 // "Already out, getting older" loaves are visually demoted.
 
-export default function VariantC() {
+export default async function VariantC() {
+  const listings = await getNearbyListings();
   const upcoming = [...listings]
     .filter((l) => l.readyMinutesFromNow > -120 && l.readyMinutesFromNow < 60 * 12)
     .sort((a, b) => a.readyMinutesFromNow - b.readyMinutesFromNow);
@@ -38,7 +42,7 @@ export default function VariantC() {
           </h2>
           <ul className="space-y-3">
             {headline.map((l) => {
-              const b = bakerById(l.bakerId);
+              const b = l.baker;
               const min = l.readyMinutesFromNow;
               const isOut = min <= 0;
               return (
@@ -107,7 +111,7 @@ export default function VariantC() {
             </h2>
             <ul className="grid sm:grid-cols-2 gap-3">
               {laterToday.map((l) => {
-                const b = bakerById(l.bakerId);
+                const b = l.baker;
                 return (
                   <li
                     key={l.id}
@@ -144,7 +148,7 @@ export default function VariantC() {
             </h2>
             <ul className="space-y-2">
               {stillWarm.map((l) => {
-                const b = bakerById(l.bakerId);
+                const b = l.baker;
                 return (
                   <li
                     key={l.id}

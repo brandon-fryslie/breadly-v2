@@ -1,24 +1,21 @@
-import {
-  listings,
-  bakerById,
-  eater,
-  fmtPrice,
-  fmtTime,
-  matchScore,
-} from "@/lib/data";
-import { TestBanner, BreadImg, TagPill, Stars } from "@/lib/ui";
+import { getEater, getNearbyListings } from "@/lib/queries";
+import { fmtPrice, fmtTime, matchScore } from "@/lib/format";
+import { TestBanner, BreadImg, TagPill } from "@/lib/ui";
+
+export const dynamic = "force-dynamic";
 
 // Variant B — One Perfect Match.
 // Hypothesis: relevance is the surprise. Calm, centered, almost no choice.
 // One hero card. The map is gone. No browse. Reasoning is foregrounded.
 
-export default function VariantB() {
+export default async function VariantB() {
+  const [eater, listings] = await Promise.all([getEater(), getNearbyListings()]);
   const ranked = [...listings]
     .filter((l) => !eater.preferences.exclude.some((t) => l.tags.includes(t)))
-    .sort((a, b) => matchScore(b) - matchScore(a));
+    .sort((a, b) => matchScore(b, eater.preferences) - matchScore(a, eater.preferences));
 
   const hero = ranked[0];
-  const heroBaker = bakerById(hero.bakerId);
+  const heroBaker = hero.baker;
   const secondary = ranked.slice(1, 4);
 
   return (
@@ -108,7 +105,7 @@ export default function VariantB() {
           </p>
           <ul className="space-y-3">
             {secondary.map((l) => {
-              const b = bakerById(l.bakerId);
+              const b = l.baker;
               return (
                 <li
                   key={l.id}

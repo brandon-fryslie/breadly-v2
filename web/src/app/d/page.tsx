@@ -1,19 +1,26 @@
-import { schedule, bakerById, fmtPrice, dayLabel, listings } from "@/lib/data";
-import { TestBanner, TagPill, Stars } from "@/lib/ui";
+import { getNearbyListings, getWeekSchedule } from "@/lib/queries";
+import { fmtPrice, dayLabel } from "@/lib/format";
+import { TestBanner } from "@/lib/ui";
+
+export const dynamic = "force-dynamic";
 
 // Variant D — The Week.
 // Hypothesis: the bakery's full upcoming schedule is the surprise — info
 // the eater has never had access to before. Calendar-first. Available-now is
 // secondary. The product reads as a planning tool, not a hunting tool.
 
-export default function VariantD() {
+export default async function VariantD() {
+  const [schedule, listings] = await Promise.all([
+    getWeekSchedule(),
+    getNearbyListings(),
+  ]);
   const days = [0, 1, 2, 3, 4, 5, 6] as const;
   const byDay = days.map((d) => ({
     offset: d,
     items: schedule.filter((s) => s.dayOffset === d),
   }));
   const todayAvailable = listings.filter(
-    (l) => l.readyMinutesFromNow > -180 && l.readyMinutesFromNow < 60 * 6
+    (l) => l.readyMinutesFromNow > -180 && l.readyMinutesFromNow < 60 * 6,
   );
 
   return (
@@ -22,7 +29,7 @@ export default function VariantD() {
 
       <div className="max-w-6xl mx-auto w-full px-5 py-8">
         <p className="text-xs uppercase tracking-widest text-stone-500 mb-2">
-          Hawthorne · 7 days
+          Boulder · 7 days
         </p>
         <h1 className="text-3xl font-semibold tracking-tight text-stone-900 mb-2">
           What your neighborhood is baking this week.
@@ -57,7 +64,7 @@ export default function VariantD() {
                   </li>
                 )}
                 {items.map((s) => {
-                  const b = bakerById(s.bakerId);
+                  const b = s.baker;
                   return (
                     <li
                       key={s.id}
@@ -109,7 +116,7 @@ export default function VariantD() {
           </div>
           <ul className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
             {todayAvailable.map((l) => {
-              const b = bakerById(l.bakerId);
+              const b = l.baker;
               return (
                 <li
                   key={l.id}

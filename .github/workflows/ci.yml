@@ -1,0 +1,126 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+env:
+  NODE_VERSION: "22"
+  # Build-time placeholder; production uses Secret Manager via Cloud Run.
+  NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: pk_test_ci_placeholder
+
+jobs:
+  test:
+    name: Typecheck + DB roundtrip
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: breadly_app
+          POSTGRES_PASSWORD: breadly_local
+          POSTGRES_DB: breadly
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U breadly_app -d breadly"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    defaults:
+      run:
+        working-directory: web
+
+    env:
+      DATABASE_URL: postgres://breadly_app:breadly_local@localhost:5432/breadly
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - run: npm ci
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Apply migrations
+        run: npm run db:migrate
+
+      - name: Seed
+        run: npm run db:seed
+
+      - name: Build
+        run: npm run build
+
+  terraform-validate:
+    name: Terraform validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.8.5"
+      - name: Validate dev
+        working-directory: infra/envs/dev
+        run: |
+          terraform init -backend=false
+          terraform validate
+      - name: Validate prod
+        working-directory: infra/envs/prod
+        run: |
+          terraform init -backend=false
+          terraform validate
+
+  # Build + push runs only on main. Requires the following repo secrets:
+  #   GCP_WIF_PROVIDER       e.g. projects/123/locations/global/workloadIdentityPools/github/providers/github
+  #   GCP_DEPLOY_SA          e.g. github-deployer@<dev-project>.iam.gserviceaccount.com
+  #   GCP_PROJECT            e.g. breadly-dev-XXXX
+  #   GCP_REGION             e.g. us-central1
+  #   ARTIFACT_REPO          e.g. breadly-dev
+  #   CLERK_PUBLISHABLE_KEY  pk_test_... (baked into the client bundle)
+  build-and-deploy:
+    name: Build image + deploy to Cloud Run (dev)
+    if: github.ref == 'refs/heads/main'
+    needs: [test, terraform-validate]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write   # required for Workload Identity Federation
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_DEPLOY_SA }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure docker auth
+        run: gcloud auth configure-docker ${{ secrets.GCP_REGION }}-docker.pkg.dev --quiet
+
+      - name: Build + push image
+        working-directory: web
+        env:
+          IMAGE_TAG: ${{ secrets.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT }}/${{ secrets.ARTIFACT_REPO }}/breadly-web:${{ github.sha }}
+        run: |
+          docker build \
+            --build-arg NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${{ secrets.CLERK_PUBLISHABLE_KEY }} \
+            -t "$IMAGE_TAG" .
+          docker push "$IMAGE_TAG"
+
+      - name: Deploy to Cloud Run
+        run: |
+          gcloud run deploy breadly-web-dev \
+            --image=${{ secrets.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT }}/${{ secrets.ARTIFACT_REPO }}/breadly-web:${{ github.sha }} \
+            --region=${{ secrets.GCP_REGION }} \
+            --project=${{ secrets.GCP_PROJECT }}

@@ -1,4 +1,6 @@
-import { eater } from "@/lib/data";
+import { getEater } from "@/lib/queries";
+
+export const dynamic = "force-dynamic";
 
 const variants = [
   {
@@ -35,7 +37,8 @@ const variants = [
   },
 ] as const;
 
-export default function TestMenu() {
+export default async function TestMenu() {
+  const eater = await getEater();
   return (
     <div className="max-w-4xl mx-auto px-6 py-12">
       <header className="mb-10">

@@ -1,14 +1,16 @@
-import { listings, bakerById, eater, fmtPrice, fmtTime } from "@/lib/data";
+import { getEater, getNearbyListings } from "@/lib/queries";
+import { fmtPrice, fmtTime } from "@/lib/format";
 import { TestBanner, BreadImg, TagPill, Stars } from "@/lib/ui";
+
+export const dynamic = "force-dynamic";
 
 // Variant A — Density.
 // Hypothesis: the surprise is the sheer presence of options. The screen is
 // busy, browse-able, and emphasizes "look how much is near you right now."
 // No curation. No "for you." The map and the long list are the whole pitch.
 
-export default function VariantA() {
-  // Show every listing, sorted by distance. No filtering by preference —
-  // density is the point.
+export default async function VariantA() {
+  const [eater, listings] = await Promise.all([getEater(), getNearbyListings()]);
   const sorted = [...listings].sort((a, b) => a.distanceMi - b.distanceMi);
 
   return (
@@ -51,7 +53,7 @@ export default function VariantA() {
           </h2>
           <ul className="grid sm:grid-cols-2 gap-3">
             {sorted.map((l) => {
-              const baker = bakerById(l.bakerId);
+              const baker = l.baker;
               return (
                 <li
                   key={l.id}
