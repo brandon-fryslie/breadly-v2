@@ -40,6 +40,14 @@ COPY --from=build --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=build --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --from=build --chown=nextjs:nodejs /app/public ./public
 
+# Migrations: ship the drizzle/ SQL + a runtime-only entrypoint so a
+# Cloud Run Job can apply migrations using the same image as the service.
+# Standalone strips devDeps (no tsx), so we use drizzle-orm's migrator
+# directly. [LAW:one-source-of-truth] — same migrations folder both paths
+# use; the dev-side `npm run db:migrate` uses tsx, this one uses node.
+COPY --from=build --chown=nextjs:nodejs /app/drizzle ./drizzle
+COPY --from=build --chown=nextjs:nodejs /app/src/db/migrate-runtime.mjs ./src/db/migrate-runtime.mjs
+
 USER nextjs
 EXPOSE 3000
 CMD ["node", "server.js"]
