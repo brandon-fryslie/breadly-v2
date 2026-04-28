@@ -7,26 +7,42 @@ Engineering decomposition of `01-product-design.md` into shippable epics, sequen
 - Supply density is the gating crux for the real-business read; eater first-session activation is the gating crux for the portfolio read. M1 + M2 attack both.
 - Variability lives in data (tags, statuses, discriminated unions), not in control flow. The tag system is *one mechanism* serving filter / notify / match / bounty.
 
+**This is a real platform, not a mockup.** The signup flows, baker portal, eater portal, listing post/discover/claim/handoff loop, schedules, bounties, ratings — all real, working against a real DB, with real auth. Only the categories called out in `01-product-design.md` §7 (payments, KYC, delivery, legal/compliance) are mocked. Portfolio target is platform/systems engineering depth, hence GCP + Terraform from day 1.
+
 ---
 
-## Stack picks (default — push back if you disagree)
+## Stack (committed)
 
 | Concern | Pick | Why |
 |---|---|---|
 | Framework | Next.js 16 (App Router) + React 19 + TS | Already scaffolded; SSR + RSC fits map+list well |
-| Styling | Tailwind 4 | Already scaffolded |
-| DB | Postgres (Neon or Supabase) | Geo, JSON tags, mature ecosystem |
+| Styling | Tailwind 4 + a brand-forward design pass via `frontend-design` skill | Portfolio target wants real visual identity, not generic |
+| Hosting (app) | Cloud Run (containerized) | User wants GCP exposure; Cloud Run is right-sized; scales to zero |
+| DB | Cloud SQL for Postgres + PostGIS extension | Managed Postgres on GCP; PostGIS is non-negotiable for geo radius |
 | ORM | Drizzle | Typed, migration-friendly, no runtime overhead |
-| Auth | Auth.js (NextAuth v5) with email + OAuth | Boring, known good, no vendor lock |
-| Real-time | Postgres LISTEN/NOTIFY → SSE; upgrade path to Pusher/Ably if needed | Single source of truth, no separate event bus |
-| Maps | MapLibre GL + tile provider (Stadia/Protomaps) | Open, no Mapbox token gating |
-| Geo | PostGIS extension; or `cube`+`earthdistance` if PostGIS is overkill | Real radius queries, not bbox lies |
-| Hosting | Vercel for app + Neon for DB | Match-the-stack; cheap; scales fine for portfolio + early real |
-| File storage | S3-compatible (Vercel Blob or R2) for listing photos | Standard |
-| Notifications | Email (Resend) + web push; SMS deferred | Resend is fastest path |
-| Testing | Vitest + Playwright | Vitest for unit, Playwright for the W1→W11 golden path |
+| Auth | Clerk | Picked for speed; vendor lock accepted as a trade |
+| Real-time | Postgres LISTEN/NOTIFY → SSE from Cloud Run; upgrade path to Pub/Sub if needed | Single source of truth; Cloud Run supports SSE on long-lived requests |
+| Maps | MapLibre GL + Protomaps tiles served from a Cloud Storage bucket | No Mapbox token gating; full control |
+| Geo | PostGIS (radius queries, neighborhood polygons) | The real answer; portfolio wants to show real geo |
+| File storage | Cloud Storage bucket per env, signed URLs for upload | GCP-native; integrates with IAM |
+| Secrets | Secret Manager | No env-vars-in-CI nonsense |
+| Image registry | Artifact Registry | Where Cloud Run pulls from |
+| IaC | Terraform — `infra/` directory, separate `dev` + `prod` workspaces | User explicitly wants this for GCP learning |
+| CI/CD | GitHub Actions: typecheck + test + build image + push to Artifact Registry; Cloud Run deploys on tag (or per-PR preview later) | Standard, no Cloud Build dependency |
+| Notifications | Email via Resend; web push deferred; SMS deferred | Email is the table-stakes channel |
+| Testing | Vitest (unit) + Playwright (E2E for W3 → W11 → W14 golden path) | Vitest for unit, Playwright for the cold-core demo |
+| Geographic anchor | **Boulder, Colorado** — real neighborhoods, real lat/lng | Per user; replaces the temporary Hawthorne/Portland data |
 
-These are defaults. If the portfolio framing wants to flex on a specific tool (e.g., "show off something interesting"), say which epic and we'll deviate.
+**GCP layout (target):**
+- Two GCP projects: `breadly-dev` and `breadly-prod`. Terraform manages both via workspaces.
+- Region: `us-central1` (Iowa) — closest to Boulder, cheapest.
+- Cloud Run service: `breadly-web`, public, custom domain deferred.
+- Cloud SQL: small (`db-f1-micro` for dev, `db-g1-small` for prod), private IP, accessed from Cloud Run via the Cloud SQL connector.
+- Cloud Storage buckets: `breadly-{env}-photos` (public read for listing photos), `breadly-{env}-uploads` (private, signed-URL uploads), `breadly-{env}-tiles` (public, Protomaps).
+- Secret Manager: DB password, Clerk keys, Resend key.
+- Artifact Registry: `breadly-images` repo, regional.
+
+**Terraform `apply` is the user's job.** Modules will be code-only; they assume `gcloud auth application-default login` has happened locally and the user runs `terraform apply` themselves.
 
 ---
 
@@ -49,18 +65,34 @@ Total: 15 epics across 5 milestones. Each milestone ends with a working demo.
 
 ### E1 — Project foundations
 
-- **Goal:** dev environment, deploy target, schema, seed data, CI all working before any feature work.
+- **Goal:** dev environment + GCP deploy target + Terraform IaC + schema + seed + CI all working before any feature work. The platform-engineering substrate.
 - **Scope (in):**
-  - Drizzle schema for: `users`, `bakers`, `listings`, `tags`, `listing_tags`, `claims`, `bounties`, `schedules`, `ratings`, `follows`, `subscriptions`, `notifications`. (Detailed in a later `03-data-model.md`.)
-  - Migrations + seed script that recreates the mockup world (6 bakers, ~12 listings, ~13 scheduled bakes) plus a synthetic eater.
-  - `.env.example`, `README.md` with run instructions, `npm run db:reset` and `db:seed` scripts.
-  - Vercel + Neon connected, preview deploys per branch.
-  - Vitest configured; Playwright configured with one smoke test (load `/`).
-  - GitHub Actions: typecheck + build + tests on PR.
-- **Scope (out):** any feature code; map tile provider keys (deferred to E5).
+  - **Terraform** in `infra/`:
+    - Module: `project` — enables required APIs (run, sql, secretmanager, storage, artifactregistry, vpcaccess, iam).
+    - Module: `network` — VPC + subnet + Serverless VPC connector for Cloud Run → Cloud SQL.
+    - Module: `database` — Cloud SQL Postgres instance with PostGIS, private IP, automated backups.
+    - Module: `storage` — three buckets (photos public-read, uploads private, tiles public-read).
+    - Module: `registry` — Artifact Registry Docker repo.
+    - Module: `runtime` — Cloud Run service `breadly-web`, service account, IAM bindings, VPC connector attachment, env wiring.
+    - Module: `secrets` — Secret Manager entries (DB password, Clerk keys, Resend key) with IAM access for the Cloud Run SA.
+    - Workspaces: `dev` and `prod` with separate state.
+    - README in `infra/` documenting `terraform apply` steps user runs against their own project.
+  - **App scaffolding (extending existing `web/`):**
+    - Drizzle schema (`web/src/db/schema/`) for: `users`, `baker_profiles`, `listings`, `tags`, `listing_tags`, `eater_preferences`, `claims`, `bounties`, `schedules`, `ratings`, `follows`, `subscriptions`, `notifications`. Detailed shapes in a follow-up `03-data-model.md`.
+    - Migrations via `drizzle-kit`. `npm run db:migrate`, `db:reset`, `db:seed`.
+    - Seed script generating ~30 bakers and ~100 listings + ~40 scheduled bakes anchored on Boulder neighborhoods (Newlands, Mapleton Hill, North Boulder, Goss Grove, University Hill, Whittier, Martin Acres, Table Mesa). Real lat/lng. Replaces the mockup data currently in `web/src/lib/data.ts`.
+    - Clerk integration: middleware, sign-in/up routes, `useUser()` wired through, webhook handler that mirrors Clerk users into `users` table on create.
+    - `.env.example`, `web/Dockerfile`, `web/.dockerignore`, `web/README.md` with both local-dev and deploy instructions.
+  - **CI:** GitHub Actions workflow `ci.yml` — typecheck, lint (when added), Vitest, Playwright smoke test against a Postgres service container, Docker image build on `main`, push to Artifact Registry.
+  - **Local dev:** docker-compose for Postgres+PostGIS so `npm run dev` works without GCP. `.env.local` example reads same keys as Cloud Run.
+- **Scope (out):** any feature code (no signup beyond Clerk's defaults; no listing creation; no claim flow); map tile provider seeding (defer to E5); custom domain (defer); production-traffic CD (defer to a later epic).
 - **Dependencies:** none.
 - **Workflows covered:** none directly — unblocks all of M1.
-- **Done when:** a fresh clone runs `npm install && npm run db:reset && npm run dev` and the four existing mockup routes still render against the live DB-backed data.
+- **Done when:**
+  1. `cd infra && terraform plan -workspace=dev` produces a clean plan in user's GCP project.
+  2. `cd web && docker-compose up -d && npm install && npm run db:migrate && npm run db:seed && npm run dev` works on a fresh clone, with the four feed variants now rendering Boulder bakers from Postgres.
+  3. CI workflow passes on a PR.
+  4. README in repo root documents both flows clearly enough for someone else to run them.
 
 ---
 
