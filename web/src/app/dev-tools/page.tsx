@@ -62,8 +62,8 @@ function BootstrapShell({
       <h2 className="text-lg font-semibold mb-1">Enable dev tools for yourself</h2>
       <p className="text-sm text-stone-700 mb-4">
         Signed in as <strong>{viewer.displayName}</strong> ({viewer.email}). Dev
-        tools is opt-in per user. Granting it to yourself works only because
-        this deployment has <code>BREADLY_ENABLE_DEV_TOOLS=true</code>.
+        tools is opt-in per user. Granting it to yourself works only in non-production builds; this
+        page 404s in prod regardless of capability.
       </p>
       <form action={enableSelfDev}>
         <button

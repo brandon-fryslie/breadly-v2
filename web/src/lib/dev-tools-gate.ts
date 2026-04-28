@@ -2,9 +2,10 @@
 // action, and API route under /dev-tools calls one of these helpers — there
 // is no second check anywhere. Two checks must both pass:
 //
-//   1. Env gate: the deployment must opt in via BREADLY_ENABLE_DEV_TOOLS=true.
-//      Production Cloud Run revisions don't set it; dev/staging do. This
-//      means even a logged-in canDev user gets a 404 in prod.
+//   1. Env gate: NODE_ENV !== "production". The Next build sets this to
+//      "production" in Cloud Run images, so the panel 404s there with no
+//      env-var bookkeeping. Dev/staging keep their natural NODE_ENV and
+//      the panel renders.
 //
 //   2. Capability gate: the user must have canDev=true in the local users
 //      row. Mirrors the canBake/canOperate pattern.
@@ -19,7 +20,7 @@ import { users } from "@/db/schema";
 import { eq } from "drizzle-orm";
 
 export function isDevToolsEnvEnabled(): boolean {
-  return process.env.BREADLY_ENABLE_DEV_TOOLS === "true";
+  return process.env.NODE_ENV !== "production";
 }
 
 export type DevToolsViewer = {
