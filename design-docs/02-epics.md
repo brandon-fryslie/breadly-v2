@@ -104,7 +104,7 @@ The smallest end-to-end thing that proves the product exists: a baker can post a
 
 - **Goal:** real users with persistent identity; role model that supports baker/eater/both/operator without fragmenting the codebase.
 - **Scope (in):**
-  - Email + Google OAuth via Auth.js.
+  - Email + Google OAuth via Clerk (hosted sign-in/sign-up; user mirror to local `users` via webhook).
   - User has a single account; capabilities are flags (`canBake`, `canOperate`) — *not* separate user types. (One-type-per-behavior; eater-vs-baker is a capability set, not a discriminator.)
   - `/auth/sign-in`, `/auth/sign-up`, sign-out, session middleware.
   - Profile basics: display name, avatar, address (geocoded once at save).
