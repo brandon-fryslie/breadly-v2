@@ -1,6 +1,6 @@
 import { getEater, getNearbyListings } from "@/lib/queries";
 import { fmtPrice, fmtTime } from "@/lib/format";
-import { TestBanner, BreadImg, TagPill, Stars } from "@/lib/ui";
+import { BreadImg, TagPill, Stars } from "@/lib/ui";
 
 export const dynamic = "force-dynamic";
 
@@ -15,8 +15,6 @@ export default async function VariantA() {
 
   return (
     <main className="flex-1 flex flex-col">
-      <TestBanner variant="A" label="Density — every loaf nearby right now" />
-
       {/* sticky filter bar */}
       <div className="sticky top-0 z-10 bg-white border-b border-stone-200 px-4 py-3 flex items-center gap-2 overflow-x-auto">
         <FilterChip active>Available now</FilterChip>
