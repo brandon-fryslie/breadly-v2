@@ -24,7 +24,9 @@ variable "db_password" {
 locals {
   // app reads DATABASE_URL; on Cloud Run this hits the SQL Auth Proxy via
   // the unix socket the cloudsql-instances annotation mounts at /cloudsql.
-  database_url = "postgres://${var.db_user}:${urlencode(var.db_password)}@/${var.db_name}?host=/cloudsql/${var.cloudsql_connection_name}"
+  // `localhost` is a parser placeholder: postgres-js calls `new URL()` which
+  // rejects empty hosts. Real connection target is `?host=/cloudsql/...`.
+  database_url = "postgres://${var.db_user}:${urlencode(var.db_password)}@localhost/${var.db_name}?host=/cloudsql/${var.cloudsql_connection_name}"
 
   placeholder_secrets = {
     clerk_secret_key     = "Clerk backend secret key (sk_...)"

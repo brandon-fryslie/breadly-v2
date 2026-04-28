@@ -39,7 +39,8 @@ resource "google_sql_database_instance" "main" {
   deletion_protection = var.deletion_protection
 
   settings {
-    tier              = var.tier
+    tier    = var.tier
+    edition = "ENTERPRISE" // [LAW:no-mode-explosion] shared-core tiers (db-f1-micro/g1-small) require ENTERPRISE; ENTERPRISE_PLUS rejects them
     availability_type = var.high_availability ? "REGIONAL" : "ZONAL"
     disk_size         = 10
     disk_autoresize   = true

@@ -25,11 +25,23 @@ function getSql(): Sql {
   if (!url) {
     throw new Error("DATABASE_URL is not set");
   }
-  _sql = postgres(url, {
+  // Cloud SQL unix socket URLs encode the socket path as `?host=/cloudsql/...`.
+  // postgres-js connects to the URL's authority (localhost:5432) and ignores
+  // the query param, so we promote `?host=` to an explicit option.
+  // [LAW:dataflow-not-control-flow] one parse path; the data (presence of
+  // socket host) decides which connection target wins.
+  const parsed = new URL(url);
+  const socketHost = parsed.searchParams.get("host");
+  // postgres-js forwards remaining query params to Postgres as GUC settings;
+  // strip them after we've harvested what we need so server doesn't reject.
+  parsed.search = "";
+  const opts: Parameters<typeof postgres>[1] = {
     max: 5,
     idle_timeout: 20,
     prepare: false,
-  });
+    ...(socketHost && socketHost.startsWith("/") ? { host: socketHost } : {}),
+  };
+  _sql = postgres(parsed.toString(), opts);
   if (process.env.NODE_ENV !== "production") {
     global.__breadly_pg__ = _sql;
   }
