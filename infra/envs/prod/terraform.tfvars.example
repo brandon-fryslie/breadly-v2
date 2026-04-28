@@ -1,0 +1,4 @@
+// Copy to terraform.tfvars (gitignored).
+// project_id     = "your-breadly-prod-project"
+// db_password    = "<strong>"
+// clerk_publishable_key = "pk_live_..."

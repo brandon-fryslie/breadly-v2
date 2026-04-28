@@ -1,0 +1,35 @@
+// Artifact Registry Docker repo for the breadly-web container image.
+
+variable "project_id" { type = string }
+variable "region" { type = string }
+variable "env" { type = string }
+
+resource "google_artifact_registry_repository" "images" {
+  project       = var.project_id
+  location      = var.region
+  repository_id = "breadly-${var.env}"
+  description   = "Breadly container images (${var.env})"
+  format        = "DOCKER"
+
+  cleanup_policies {
+    id     = "keep-recent"
+    action = "KEEP"
+    most_recent_versions {
+      keep_count = 10
+    }
+  }
+
+  cleanup_policies {
+    id     = "delete-untagged"
+    action = "DELETE"
+    condition {
+      tag_state  = "UNTAGGED"
+      older_than = "604800s" // 7d
+    }
+  }
+}
+
+output "repository_id" { value = google_artifact_registry_repository.images.repository_id }
+output "repository_url" {
+  value = "${var.region}-docker.pkg.dev/${var.project_id}/${google_artifact_registry_repository.images.repository_id}"
+}

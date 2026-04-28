@@ -1,0 +1,12 @@
+// Copy to terraform.tfvars (gitignored) and fill in.
+//
+// project_id     = "your-breadly-dev-project"
+// region         = "us-central1"
+// db_password    = "<generate a strong one — rotate later>"
+// clerk_publishable_key = "pk_test_..."
+//
+// After apply, populate the actual secrets:
+//   echo -n "<password>"          | gcloud secrets versions add breadly-dev-db_password --data-file=-
+//   echo -n "sk_test_..."         | gcloud secrets versions add breadly-dev-clerk_secret_key --data-file=-
+//   echo -n "whsec_..."           | gcloud secrets versions add breadly-dev-clerk_webhook_secret --data-file=-
+//   echo -n "<resend api key>"    | gcloud secrets versions add breadly-dev-resend_api_key --data-file=-

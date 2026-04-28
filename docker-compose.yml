@@ -1,0 +1,25 @@
+# Local Postgres+PostGIS for `npm run dev`. Matches Cloud SQL's Postgres 16
+# major version. Database/user/password match what the seed + migrate
+# scripts expect.
+
+services:
+  postgres:
+    image: postgis/postgis:16-3.4
+    container_name: breadly-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: breadly_app
+      POSTGRES_PASSWORD: breadly_local
+      POSTGRES_DB: breadly
+    ports:
+      - "5432:5432"
+    volumes:
+      - breadly_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U breadly_app -d breadly"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  breadly_pgdata:
