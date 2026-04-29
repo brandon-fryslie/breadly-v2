@@ -33,16 +33,32 @@ export default async function BakerHome() {
         <h1 className="text-3xl font-semibold tracking-tight">
           {profile?.bakeryName ?? "Your bakery"}
         </h1>
-        {profile?.slug ? (
-          <p className="text-sm text-stone-500 mt-1">/b/{profile.slug}</p>
+        {profile?.neighborhood ? (
+          <p className="text-sm text-stone-500 mt-1">{profile.neighborhood}</p>
         ) : null}
       </header>
+
+      {profile?.slug ? (
+        <section className="rounded-xl border border-amber-200 bg-amber-50 px-6 py-5">
+          <p className="text-xs uppercase tracking-widest text-amber-800 mb-1 font-semibold">
+            Your storefront
+          </p>
+          <Link
+            href={`/b/${profile.slug}`}
+            className="font-mono text-stone-900 text-lg underline decoration-amber-300 hover:decoration-stone-500"
+          >
+            /b/{profile.slug}
+          </Link>
+          <p className="text-sm text-stone-600 mt-2">
+            Share this URL anywhere — it's your public bakery page.
+          </p>
+        </section>
+      ) : null}
 
       <section className="rounded-xl border border-stone-200 bg-white px-6 py-5">
         <h2 className="text-lg font-semibold mb-1">No listings yet</h2>
         <p className="text-sm text-stone-600 mb-4">
-          The post-a-loaf form ships with E3 — coming next. For now your bakery
-          page is reserved at <code className="text-xs">{profile?.slug}</code>.
+          The post-a-loaf form ships next.
         </p>
         <Link
           href="/me"

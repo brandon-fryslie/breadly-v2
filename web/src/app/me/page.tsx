@@ -8,7 +8,7 @@ import { redirect } from "next/navigation";
 import { db } from "@/db/client";
 import { users, bakerProfiles } from "@/db/schema";
 import { eq } from "drizzle-orm";
-import { claimBaker } from "./actions";
+import { ClaimBakerForm } from "./claim-baker-form";
 
 export const dynamic = "force-dynamic";
 
@@ -100,24 +100,7 @@ export default async function MePage() {
             Bakers can post loaves on Breadly. You can do this and still browse
             as an eater — they're the same account.
           </p>
-          <form action={claimBaker} className="flex flex-col gap-3">
-            <label className="text-sm">
-              <span className="block text-stone-700 mb-1">Bakery name</span>
-              <input
-                name="bakeryName"
-                type="text"
-                required
-                placeholder="e.g. Boulder Hearth"
-                className="w-full border border-stone-300 rounded-md px-3 py-2 focus:outline-none focus:border-stone-500"
-              />
-            </label>
-            <button
-              type="submit"
-              className="self-start bg-stone-900 text-white rounded-md px-4 py-2 hover:bg-stone-700"
-            >
-              Claim baker capability
-            </button>
-          </form>
+          <ClaimBakerForm />
         </section>
       )}
     </main>
