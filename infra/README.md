@@ -59,13 +59,6 @@ echo -n "<resend_api_key>"                 | gcloud secrets versions add breadly
 
 After this, `terraform output service_url` gives you the Cloud Run URL. The first apply uses the public Cloud Run "hello" image as a placeholder; CI overwrites it on the next merge.
 
-## What's not in here yet
-
-- **VPC + Serverless VPC Connector** — we use public-IP Cloud SQL with the Cloud Run native `cloudsql-instances` proxy for now. Cleanly upgradable later by adding a `network` module and switching `database.ip_configuration` to private.
-- **Custom domain** — defer until Cloud Run is up.
-- **CI deployment IAM (Workload Identity Federation)** — wired in E1.7. Until then, deploys are manual: `gcloud run deploy --image <new image>`.
-- **Cloud Logging / monitoring dashboards** — stock Cloud Run logs are sufficient for E1.
-
 ## Conventions
 
 - One module = one well-scoped concern; modules don't talk to each other directly. Cross-module wiring lives in the env composition (`envs/<env>/main.tf`).
