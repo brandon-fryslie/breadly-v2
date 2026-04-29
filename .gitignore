@@ -1,5 +1,10 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
+# Claude Code runtime artifacts (lock files etc.). Settings/hooks
+# under .claude/ are still allowlistable explicitly if we decide
+# to track them.
+.claude/
+
 # dependencies
 web/node_modules
 /.pnp
