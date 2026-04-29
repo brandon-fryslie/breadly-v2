@@ -74,12 +74,20 @@ export default async function BakerHome() {
         pickedUp={recentlyPickedUp.length}
       />
 
-      <Link
-        href="/baker/new"
-        className="inline-flex items-center gap-2 bg-stone-900 text-white text-sm rounded-md px-4 py-2 hover:bg-stone-700"
-      >
-        + Post a loaf
-      </Link>
+      <div className="flex flex-wrap items-center gap-3">
+        <Link
+          href="/baker/new"
+          className="inline-flex items-center gap-2 bg-stone-900 text-white text-sm rounded-md px-4 py-2 hover:bg-stone-700"
+        >
+          + Post a loaf
+        </Link>
+        <Link
+          href="/baker/schedule"
+          className="inline-flex items-center gap-2 border border-stone-300 text-stone-700 text-sm rounded-md px-4 py-2 hover:border-stone-500 hover:text-stone-900"
+        >
+          Bake schedule
+        </Link>
+      </div>
 
       <Section
         eyebrow="01"
