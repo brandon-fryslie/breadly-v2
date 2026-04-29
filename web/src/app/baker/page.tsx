@@ -56,17 +56,25 @@ export default async function BakerHome() {
       ) : null}
 
       <section className="rounded-xl border border-stone-200 bg-white px-6 py-5">
-        <h2 className="text-lg font-semibold mb-1">No listings yet</h2>
+        <h2 className="text-lg font-semibold mb-1">Post a loaf</h2>
         <p className="text-sm text-stone-600 mb-4">
-          The post-a-loaf form ships next.
+          Got something out of the oven? Or planning a bake for later? Post
+          it in under 30 seconds.
         </p>
         <Link
-          href="/me"
-          className="text-sm text-stone-700 underline hover:text-stone-900"
+          href="/baker/new"
+          className="inline-block bg-stone-900 text-white text-sm rounded-md px-4 py-2 hover:bg-stone-700"
         >
-          Back to profile
+          + Post a loaf
         </Link>
       </section>
+
+      <Link
+        href="/me"
+        className="text-sm text-stone-500 underline hover:text-stone-900"
+      >
+        Back to profile
+      </Link>
     </main>
   );
 }
