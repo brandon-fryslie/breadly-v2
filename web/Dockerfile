@@ -48,6 +48,14 @@ COPY --from=build --chown=nextjs:nodejs /app/public ./public
 COPY --from=build --chown=nextjs:nodejs /app/drizzle ./drizzle
 COPY --from=build --chown=nextjs:nodejs /app/src/db/migrate-runtime.mjs ./src/db/migrate-runtime.mjs
 
+# Next's standalone tracer doesn't see migrate-runtime.mjs (not a server
+# entrypoint), so postgres + drizzle-orm don't end up in the trimmed
+# node_modules. Both have zero transitive deps, so explicit COPYs are
+# the smallest fix; the Job and the Next runtime resolve from the same
+# /app/node_modules tree.
+COPY --from=deps --chown=nextjs:nodejs /app/node_modules/postgres ./node_modules/postgres
+COPY --from=deps --chown=nextjs:nodejs /app/node_modules/drizzle-orm ./node_modules/drizzle-orm
+
 USER nextjs
 EXPOSE 3000
 CMD ["node", "server.js"]
