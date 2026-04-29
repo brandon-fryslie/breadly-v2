@@ -2,6 +2,16 @@
 
 Engineering decomposition of `01-product-design.md` into shippable epics, sequenced so each milestone is a coherent demoable cut. Lives alongside the product design doc, not above it — when the product doc and this doc disagree, the product doc wins and this doc gets revised.
 
+> **Where the work actually lives.** This document is the *plan*. The active backlog lives in `lit` (the issue tracker; DB at `.git/links/dolt`). Open tickets, status, dependencies, and rank are all there. Use `lit ready` for the next-up queue and `lit ls` to browse. New work goes into `lit` first; this doc gets revised when the *strategy* changes, not when individual tickets move.
+
+**Mapping doc → tracker:**
+- M0 / E1 — shipped historically; not tracked.
+- M1 → ED1 + ED2 (demo-cut rollups absorb E2/E3/E4/E5/E6/E7/E8/E9 partial).
+- M3 / E10 — its own epic in `lit` with two child tasks.
+- M4 / E11, E12 — epic-level only in `lit`; decompose when staffing M4.
+- M5 / E14, E15 — epic-only; further out → higher level.
+- Cross-cutting: golden-path Playwright (`CX-1`), photo-required (`CX-2`), filter-sprawl audit (`CX-3`) are real tickets in `lit`. Universal-laws / mock-vs-document discipline / privacy gradient stay as guidelines below.
+
 **Standing decisions carried in from `compass/`:**
 - Straddle portfolio + real-business framings. Designs must satisfy both bars.
 - Supply density is the gating crux for the real-business read; eater first-session activation is the gating crux for the portfolio read. M1 + M2 attack both.
