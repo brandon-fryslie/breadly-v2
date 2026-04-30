@@ -19,6 +19,10 @@ import {
   type ClaimedSeat,
   type TodayListing,
 } from "./queries";
+import {
+  confirmPickupByCode,
+  markPickedUpByBakerSelf,
+} from "./actions";
 
 export const dynamic = "force-dynamic";
 
@@ -116,7 +120,7 @@ export default async function BakerHome() {
       <Section
         eyebrow="03"
         title="Claimed seats"
-        sub="Pickup codes · placeholder until ED2-2"
+        sub="Enter the eater's pickup code to confirm handoff"
         empty="Nothing claimed yet."
         count={claimedSeats.length}
       >
@@ -359,23 +363,73 @@ function ComingUpRow({
   );
 }
 
+// Each claimed seat is its own handoff terminal: visible code (so the
+// baker can sight-verify against the eater's screen), code-entry form,
+// and a self-mark fallback. Same shape on every row — variability lives
+// in the seat data, not in branching layouts. [LAW:dataflow-not-control-flow]
 function ClaimedSeatRow({ seat }: { seat: ClaimedSeat }) {
   return (
-    <div className="flex items-center gap-4 rounded-lg border border-stone-200 bg-white px-4 py-3">
-      <div className="font-mono text-2xl tabular-nums tracking-wider text-stone-900">
-        {seat.pickupCode}
+    <div
+      className="rounded-lg border border-stone-200 bg-white px-4 py-3 space-y-3"
+      data-testid="claimed-seat-row"
+      data-claim-id={seat.claimId}
+    >
+      <div className="flex items-center gap-4">
+        <div className="font-mono text-2xl tabular-nums tracking-wider text-stone-900">
+          {seat.pickupCode}
+        </div>
+        <div className="flex-1 min-w-0">
+          <h3 className="font-semibold text-stone-900 truncate">
+            {seat.listingName}
+          </h3>
+          <p className="text-xs text-stone-500">
+            {seat.qty} {seat.qty === 1 ? "loaf" : "loaves"} for{" "}
+            {seat.eaterName}
+          </p>
+        </div>
+        <span className="text-[10px] uppercase tracking-widest text-stone-400">
+          held
+        </span>
       </div>
-      <div className="flex-1 min-w-0">
-        <h3 className="font-semibold text-stone-900 truncate">
-          {seat.listingName}
-        </h3>
-        <p className="text-xs text-stone-500">
-          {seat.qty} {seat.qty === 1 ? "loaf" : "loaves"} for {seat.eaterName}
-        </p>
+
+      <div className="flex items-center gap-2 flex-wrap">
+        <form
+          action={confirmPickupByCode}
+          className="flex items-center gap-2"
+          data-testid="handoff-form"
+        >
+          <input type="hidden" name="listingId" value={seat.listingId} />
+          <input
+            name="code"
+            inputMode="numeric"
+            pattern="\d{4}"
+            maxLength={4}
+            placeholder="0000"
+            aria-label="Pickup code"
+            data-testid="handoff-code-input"
+            className="w-20 font-mono tabular-nums tracking-widest text-center rounded-md border border-stone-300 px-2 py-1.5 text-sm focus:border-stone-500 focus:outline-none"
+            required
+          />
+          <button
+            type="submit"
+            data-testid="handoff-confirm"
+            className="text-sm rounded-md bg-stone-900 text-white px-3 py-1.5 hover:bg-stone-700"
+          >
+            Confirm pickup
+          </button>
+        </form>
+        <form action={markPickedUpByBakerSelf}>
+          <input type="hidden" name="claimId" value={seat.claimId} />
+          <button
+            type="submit"
+            data-testid="handoff-self-pickup"
+            className="text-xs text-stone-500 underline hover:text-stone-800"
+            title="Use if the eater is already gone or no code was exchanged."
+          >
+            Mark picked up myself
+          </button>
+        </form>
       </div>
-      <span className="text-[10px] uppercase tracking-widest text-stone-400">
-        held
-      </span>
     </div>
   );
 }

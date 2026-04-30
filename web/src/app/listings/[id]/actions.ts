@@ -16,6 +16,7 @@ import { revalidatePath } from "next/cache";
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { listings } from "@/db/schema";
+import { consolidateListingPickedUp } from "./queries";
 
 // --- Baker actions -------------------------------------------------------
 
@@ -142,6 +143,44 @@ export async function createClaim(formData: FormData): Promise<void> {
       VALUES (${id}, ${userId}, 1, 'active', ${generatePickupCode()})
     `);
   }
+
+  revalidatePath(`/listings/${id}`);
+  revalidatePath("/me");
+  revalidatePath("/baker");
+}
+
+// Eater-side fallback for the handoff: baker is offline / handoff was
+// informal. Records pickup_method implicitly via the action's identity —
+// the audit-log epic (breadly-admin-5h2.6) will capture which action ran.
+// [LAW:single-enforcer] All transitions to 'picked_up' funnel through
+// either this or the baker-side handoff actions.
+export async function markPickedUpByEaterSelf(
+  formData: FormData,
+): Promise<void> {
+  const id = String(formData.get("id") ?? "");
+  if (!id) redirect("/");
+
+  const { userId } = await auth();
+  if (!userId) redirect(`/sign-in?redirect_url=/listings/${id}`);
+
+  const picked = await db.execute<{ id: string }>(sql`
+    UPDATE claims
+    SET status = 'picked_up',
+        picked_up_at = NOW(),
+        updated_at = NOW()
+    WHERE listing_id = ${id}
+      AND eater_id = ${userId}
+      AND status = 'active'
+    RETURNING id
+  `);
+
+  if (picked.length === 0) {
+    throw new Error(
+      `markPickedUpByEaterSelf: no active claim for ${userId} on listing ${id}`,
+    );
+  }
+
+  await consolidateListingPickedUp(id);
 
   revalidatePath(`/listings/${id}`);
   revalidatePath("/me");

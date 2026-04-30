@@ -20,14 +20,15 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import {
   getListingDetail,
-  getViewerActiveClaim,
+  getViewerCurrentClaim,
   type ListingDetail,
-  type ViewerActiveClaim,
+  type ViewerCurrentClaim,
 } from "./queries";
 import {
   cancelClaimByEater,
   createClaim,
   markOutOfOven,
+  markPickedUpByEaterSelf,
   markSoldOut,
   pullListing,
 } from "./actions";
@@ -99,7 +100,7 @@ const STATUS_BADGE: Record<
 type Viewer =
   | { kind: "anonymous" }
   | { kind: "owner" }
-  | { kind: "eater"; activeClaim: ViewerActiveClaim | null };
+  | { kind: "eater"; claim: ViewerCurrentClaim | null };
 
 export default async function ListingDetailPage({ params }: PageProps) {
   const { id } = await params;
@@ -144,8 +145,8 @@ async function resolveViewer(
 ): Promise<Viewer> {
   if (!userId) return { kind: "anonymous" };
   if (userId === listing.bakerId) return { kind: "owner" };
-  const activeClaim = await getViewerActiveClaim(listing.id, userId);
-  return { kind: "eater", activeClaim };
+  const claim = await getViewerCurrentClaim(listing.id, userId);
+  return { kind: "eater", claim };
 }
 
 function Hero({ listing, now }: { listing: ListingDetail; now: Date }) {
@@ -249,7 +250,7 @@ function PrivacyBlock({
   // claim. Everyone else sees the neighborhood line.
   const showExact =
     viewer.kind === "owner" ||
-    (viewer.kind === "eater" && viewer.activeClaim !== null);
+    (viewer.kind === "eater" && viewer.claim !== null);
 
   const exactLines = [
     listing.addressLine,
@@ -401,8 +402,8 @@ function EaterClaimSection({
   listing: ListingDetail;
   viewer: Viewer;
 }) {
-  if (viewer.kind === "eater" && viewer.activeClaim) {
-    return <ClaimedReveal listing={listing} claim={viewer.activeClaim} />;
+  if (viewer.kind === "eater" && viewer.claim) {
+    return <ClaimedReveal listing={listing} claim={viewer.claim} />;
   }
   if (viewer.kind === "anonymous") {
     return <SignInToClaim listing={listing} />;
@@ -410,14 +411,19 @@ function EaterClaimSection({
   return <ClaimForm listing={listing} />;
 }
 
+// Eater's view of their claim. Two states encoded in claim.status:
+// 'active' (pre-handoff: code visible, cancel + self-mark fallback) and
+// 'picked_up' (post-handoff: receipt mode, no actions). Same shell, same
+// privacy gradient, different inner blocks. [LAW:dataflow-not-control-flow]
 function ClaimedReveal({
   listing,
   claim,
 }: {
   listing: ListingDetail;
-  claim: ViewerActiveClaim;
+  claim: ViewerCurrentClaim;
 }) {
   const directionsHref = buildDirectionsHref(listing);
+  const pickedUp = claim.status === "picked_up";
 
   return (
     <section
@@ -426,24 +432,36 @@ function ClaimedReveal({
     >
       <div className="flex items-baseline justify-between">
         <h2 className="text-sm font-semibold tracking-tight text-emerald-900">
-          You claimed this loaf
+          {pickedUp ? "Picked up — enjoy" : "You claimed this loaf"}
         </h2>
-        <span className="text-[10px] uppercase tracking-widest text-emerald-800">
-          show this code at pickup
+        <span
+          className="text-[10px] uppercase tracking-widest text-emerald-800"
+          data-testid="claim-state"
+        >
+          {pickedUp
+            ? claim.pickedUpAt
+              ? `picked up ${fmtDay(claim.pickedUpAt)} · ${fmtClock(claim.pickedUpAt)}`
+              : "picked up"
+            : "show this code at pickup"}
         </span>
       </div>
 
       <div className="flex items-center gap-4 rounded-lg border border-emerald-200 bg-white px-4 py-3">
         <div
-          className="font-mono text-3xl tabular-nums tracking-[0.3em] text-stone-900"
+          className={`font-mono text-3xl tabular-nums tracking-[0.3em] ${
+            pickedUp ? "text-stone-400 line-through" : "text-stone-900"
+          }`}
           data-testid="claim-pickup-code"
         >
           {claim.pickupCode}
         </div>
         <div className="text-xs text-stone-600">
-          <p className="font-semibold text-stone-800">Pickup code</p>
+          <p className="font-semibold text-stone-800">
+            {pickedUp ? "Pickup complete" : "Pickup code"}
+          </p>
           <p>
-            {claim.qty} {claim.qty === 1 ? "loaf" : "loaves"} held for you
+            {claim.qty} {claim.qty === 1 ? "loaf" : "loaves"}{" "}
+            {pickedUp ? "received" : "held for you"}
           </p>
         </div>
       </div>
@@ -456,20 +474,35 @@ function ClaimedReveal({
           data-testid="claim-directions"
           className="inline-flex items-center text-sm rounded-md border border-emerald-300 bg-white px-4 py-2 text-emerald-900 hover:border-emerald-500 hover:text-emerald-950"
         >
-          Get directions
+          {pickedUp ? "Bakery address" : "Get directions"}
         </a>
       ) : null}
 
-      <form action={cancelClaimByEater}>
-        <input type="hidden" name="id" value={listing.id} />
-        <button
-          type="submit"
-          data-testid="claim-cancel"
-          className="text-xs text-stone-500 underline hover:text-stone-800"
-        >
-          Cancel my claim
-        </button>
-      </form>
+      {pickedUp ? null : (
+        <div className="flex items-center gap-4 pt-1">
+          <form action={cancelClaimByEater}>
+            <input type="hidden" name="id" value={listing.id} />
+            <button
+              type="submit"
+              data-testid="claim-cancel"
+              className="text-xs text-stone-500 underline hover:text-stone-800"
+            >
+              Cancel my claim
+            </button>
+          </form>
+          <form action={markPickedUpByEaterSelf}>
+            <input type="hidden" name="id" value={listing.id} />
+            <button
+              type="submit"
+              data-testid="claim-self-pickup"
+              className="text-xs text-stone-500 underline hover:text-stone-800"
+              title="Use this if the baker is offline at handoff."
+            >
+              Mark picked up myself
+            </button>
+          </form>
+        </div>
+      )}
     </section>
   );
 }

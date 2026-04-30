@@ -13,6 +13,12 @@ import "server-only";
 import { sql } from "drizzle-orm";
 import { db } from "@/db/client";
 
+// This module mixes reads and a single shared write helper
+// (consolidateListingPickedUp). Both belong here because they are
+// server-internal — `import "server-only"` keeps them off the client and
+// the absence of `"use server"` keeps them off the RPC surface. UI code
+// invokes them indirectly through the actions in actions.ts.
+
 export type ListingDetailViewer =
   | { kind: "anonymous" }
   | { kind: "owner"; userId: string }
@@ -147,32 +153,41 @@ export async function getListingDetail(id: string): Promise<ListingDetail | null
   };
 }
 
-// The viewer's active claim on this listing, or null. The shape is the
-// single source for both the privacy gradient (exact address reveal) and
-// the eater-facing pickup-code panel — one query, one value, two consumers.
-// [LAW:one-source-of-truth]
-export type ViewerActiveClaim = {
+// The viewer's current claim on this listing, or null. "Current" = active
+// or already picked up — i.e. anything except cancelled. Cancelled claims
+// resolve to null so the address re-fuzzes and the claim form re-appears.
+//
+// One query, one value, three consumers (privacy gradient, pickup-code
+// reveal, picked-up receipt). The status field is a discriminator, not a
+// branch in this query. [LAW:one-source-of-truth]
+export type ViewerClaimStatus = "active" | "picked_up";
+
+export type ViewerCurrentClaim = {
   id: string;
   qty: number;
   pickupCode: string;
+  status: ViewerClaimStatus;
   createdAt: Date;
+  pickedUpAt: Date | null;
 };
 
-export async function getViewerActiveClaim(
+export async function getViewerCurrentClaim(
   listingId: string,
   userId: string,
-): Promise<ViewerActiveClaim | null> {
+): Promise<ViewerCurrentClaim | null> {
   const rows = await db.execute<{
     id: string;
     qty: number;
     pickup_code: string;
+    status: ViewerClaimStatus;
     created_at: string | Date;
+    picked_up_at: string | Date | null;
   }>(sql`
-    SELECT id, qty, pickup_code, created_at
+    SELECT id, qty, pickup_code, status, created_at, picked_up_at
     FROM claims
     WHERE listing_id = ${listingId}
       AND eater_id = ${userId}
-      AND status = 'active'
+      AND status IN ('active', 'picked_up')
     ORDER BY created_at DESC
     LIMIT 1
   `);
@@ -182,6 +197,32 @@ export async function getViewerActiveClaim(
     id: r.id,
     qty: r.qty,
     pickupCode: r.pickup_code,
+    status: r.status,
     createdAt: toDate(r.created_at),
+    pickedUpAt: r.picked_up_at === null ? null : toDate(r.picked_up_at),
   };
+}
+
+// Listing transitions to 'picked_up' iff inventory is exhausted AND no
+// active claims remain. Run after every claim-pickup; the predicate
+// (qty_available + active-claim count) decides whether any row mutates.
+// Same code path each time. [LAW:dataflow-not-control-flow]
+//
+// Shared between eater-self-mark (listings/[id]/actions.ts) and the baker
+// handoff actions (baker/actions.ts). [LAW:one-source-of-truth] for the
+// listing-status transition rule.
+export async function consolidateListingPickedUp(
+  listingId: string,
+): Promise<void> {
+  await db.execute(sql`
+    UPDATE listings
+    SET status = 'picked_up'::listing_status, updated_at = NOW()
+    WHERE id = ${listingId}
+      AND status IN ('ready', 'claimed')
+      AND qty_available = 0
+      AND NOT EXISTS (
+        SELECT 1 FROM claims c
+        WHERE c.listing_id = listings.id AND c.status = 'active'
+      )
+  `);
 }
