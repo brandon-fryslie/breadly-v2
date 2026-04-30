@@ -1,17 +1,17 @@
 // [LAW:single-enforcer] One gate for /dev-tools access. Every page, server
-// action, and API route under /dev-tools calls one of these helpers — there
-// is no second check anywhere. Two checks must both pass:
+// action, and API route under /dev-tools calls requireDevTools() — there is
+// no second check anywhere. Two checks must both pass:
 //
-//   1. Env gate: BREADLY_DEV_MODE === "true". This is the single flag that
-//      gates *all* dev/test functionality across the app — not just this
-//      panel. Default-closed: prod Cloud Run revisions don't set it and
-//      404 here regardless of capability. The dev Cloud Run service and
-//      local docker-compose set it to "true". Stays on until we onboard
-//      real customers, at which point it gets removed from the dev
-//      service env.
+//   1. Env gate: BREADLY_DEV_MODE === "true". Single flag for the whole
+//      dev/test surface; prod doesn't set it and 404s here regardless of
+//      capability.
 //
 //   2. Capability gate: the user must have canDev=true in the local users
-//      row. Mirrors the canBake/canOperate pattern.
+//      row. The capability is data: granted by an existing canDev admin
+//      through the dev-tools UI, or by an operator running
+//      `npm run db:grant-dev <email>` against the DB to bootstrap the
+//      first admin. There is no in-app self-grant — that would defeat the
+//      gate on a public deployment.
 //
 // On any failure we call notFound() — never redirect, never show a "you
 // can't see this" message. Existence of the panel is not advertised.
@@ -22,10 +22,6 @@ import { db } from "@/db/client";
 import { users } from "@/db/schema";
 import { eq } from "drizzle-orm";
 
-// Single source of truth for "is this a dev/test environment." Any future
-// dev-only feature reads this same helper — there's only one flag to set,
-// and it gates the whole dev surface.
-// [LAW:one-source-of-truth]
 export function isDevModeEnabled(): boolean {
   return process.env.BREADLY_DEV_MODE === "true";
 }
@@ -35,9 +31,6 @@ export type DevToolsViewer = {
   canDev: true;
 };
 
-// Server-component / server-action gate. Returns the viewer when allowed,
-// triggers Next's notFound() otherwise. Never returns null — callers can
-// treat the return value as "definitely allowed."
 export async function requireDevTools(): Promise<DevToolsViewer> {
   if (!isDevModeEnabled()) notFound();
 
@@ -51,14 +44,4 @@ export async function requireDevTools(): Promise<DevToolsViewer> {
   if (!me?.canDev) notFound();
 
   return { userId, canDev: true };
-}
-
-// For the bootstrap path: a signed-in user wants to grant themselves canDev
-// the first time. Allowed only when the env gate is on. Distinct from
-// requireDevTools because the user *doesn't yet* have the capability.
-export async function requireDevBootstrap(): Promise<{ userId: string }> {
-  if (!isDevModeEnabled()) notFound();
-  const { userId } = await auth();
-  if (!userId) notFound();
-  return { userId };
 }

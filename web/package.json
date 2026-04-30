@@ -10,6 +10,7 @@
     "db:migrate": "tsx src/db/migrate.ts",
     "db:reset": "tsx src/db/reset.ts",
     "db:seed": "tsx src/db/seed.ts",
+    "db:grant-dev": "tsx src/db/grant-dev.ts",
     "db:studio": "drizzle-kit studio",
     "test:e2e": "playwright test"
   },

@@ -1,20 +1,16 @@
-// /dev-tools — gated panel for seeding, time-travel, impersonation, and
-// DB inspection. ED4 ships sub-features one ticket at a time; this is the
-// foundational shell + capability bootstrap.
+// /dev-tools — gated panel. Requires BREADLY_DEV_MODE=true *and*
+// users.can_dev=true on the viewer's row. The first admin is bootstrapped
+// out-of-band via `npm run db:grant-dev`; subsequent admins are managed
+// through the Admins section here. There is no in-app self-grant.
 //
-// Gate: src/lib/dev-tools-gate.ts (single-enforcer). Page and any future
-// server actions/API routes under /dev-tools must call requireDevTools()
-// or requireDevBootstrap().
+// Gate: src/lib/dev-tools-gate.ts (single-enforcer). Page and every
+// server action under /dev-tools call requireDevTools().
 
-import {
-  isDevModeEnabled,
-  requireDevBootstrap,
-} from "@/lib/dev-tools-gate";
-import { notFound } from "next/navigation";
+import { requireDevTools } from "@/lib/dev-tools-gate";
 import { db } from "@/db/client";
 import { users } from "@/db/schema";
 import { eq } from "drizzle-orm";
-import { enableSelfDev, runSeedPack } from "./actions";
+import { promoteToDev, revokeDev, runSeedPack } from "./actions";
 import { PACKS } from "@/db/seed-packs/registry";
 
 export const dynamic = "force-dynamic";
@@ -23,6 +19,8 @@ type SearchParams = {
   status?: string;
   pack?: string;
   msg?: string;
+  admin_status?: string;
+  admin_email?: string;
 };
 
 export default async function DevToolsHome({
@@ -30,16 +28,20 @@ export default async function DevToolsHome({
 }: {
   searchParams: Promise<SearchParams>;
 }) {
-  // Env gate (single-enforcer) — but we render the bootstrap UI for
-  // signed-in users without canDev, so we don't use requireDevTools() here.
-  if (!isDevModeEnabled()) notFound();
-  const { userId } = await requireDevBootstrap();
-
+  const viewer = await requireDevTools();
   const me = await db.query.users.findFirst({
-    where: eq(users.id, userId),
-    columns: { displayName: true, email: true, canDev: true },
+    where: eq(users.id, viewer.userId),
+    columns: { displayName: true, email: true },
   });
-  if (!me) notFound();
+  const admins = await db
+    .select({
+      id: users.id,
+      email: users.email,
+      displayName: users.displayName,
+    })
+    .from(users)
+    .where(eq(users.canDev, true))
+    .orderBy(users.email);
 
   const sp = await searchParams;
 
@@ -54,100 +56,26 @@ export default async function DevToolsHome({
         </h1>
         <p className="mt-3 text-stone-600 max-w-xl text-sm leading-relaxed">
           Seed packs, time-travel, impersonation, DB inspector. Hard-disabled
-          in production by an env gate; further gated by your <code>canDev</code>{" "}
-          capability.
+          in production by an env gate; further gated by the{" "}
+          <code>can_dev</code> capability on your user row.
         </p>
+        {me ? (
+          <p className="mt-2 text-xs text-stone-500">
+            Signed in as <strong>{me.displayName}</strong> ({me.email}).
+          </p>
+        ) : null}
       </header>
 
-      {me.canDev ? (
-        <DevToolsShell viewer={me} status={sp} />
-      ) : (
-        <BootstrapShell viewer={me} />
-      )}
+      <SeedPacksSection status={sp} />
+
+      <AdminsSection
+        admins={admins}
+        viewerId={viewer.userId}
+        status={sp}
+      />
+
+      <ComingNextSection />
     </main>
-  );
-}
-
-function BootstrapShell({
-  viewer,
-}: {
-  viewer: { displayName: string; email: string };
-}) {
-  return (
-    <section className="rounded-xl border border-amber-200 bg-amber-50 px-6 py-5">
-      <h2 className="text-lg font-semibold mb-1">Enable dev tools for yourself</h2>
-      <p className="text-sm text-stone-700 mb-4">
-        Signed in as <strong>{viewer.displayName}</strong> ({viewer.email}). Dev
-        tools is opt-in per user. Granting it to yourself works only when{" "}
-        <code>BREADLY_DEV_MODE=true</code> on this deployment. Production
-        doesn't set it, so this page 404s there regardless of capability.
-      </p>
-      <form action={enableSelfDev}>
-        <button
-          type="submit"
-          className="bg-stone-900 text-white text-sm rounded-md px-4 py-2 hover:bg-stone-700"
-        >
-          Grant me canDev
-        </button>
-      </form>
-    </section>
-  );
-}
-
-function DevToolsShell({
-  viewer,
-  status,
-}: {
-  viewer: { displayName: string };
-  status: { status?: string; pack?: string; msg?: string };
-}) {
-  const upcoming: Array<{ title: string; desc: string; ticket: string }> = [
-    {
-      title: "Time-travel",
-      desc: "Set the system clock forward/back; scheduled bakes materialize on demand.",
-      ticket: "ED4-3",
-    },
-    {
-      title: "Impersonation",
-      desc: "Jump into any seeded user's session. Audit-logged.",
-      ticket: "ED4-4",
-    },
-    {
-      title: "DB inspector",
-      desc: "Read-only table + row-count view. Catches stale-seed demos.",
-      ticket: "ED4-5",
-    },
-  ];
-  return (
-    <div className="space-y-8">
-      <p className="text-sm text-stone-600">
-        Welcome, {viewer.displayName}. Sub-panels land one ticket at a time.
-      </p>
-
-      <SeedPacksSection status={status} />
-
-      <section>
-        <h2 className="text-sm font-semibold uppercase tracking-widest text-stone-500 mb-3">
-          Coming next
-        </h2>
-        <ul className="grid sm:grid-cols-3 gap-3">
-          {upcoming.map((s) => (
-            <li
-              key={s.title}
-              className="rounded-xl border border-stone-200 bg-white px-5 py-4"
-            >
-              <div className="flex items-center justify-between mb-1">
-                <h3 className="font-semibold text-stone-900 text-sm">{s.title}</h3>
-                <span className="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded bg-stone-100 text-stone-500">
-                  {s.ticket}
-                </span>
-              </div>
-              <p className="text-xs text-stone-600 leading-relaxed">{s.desc}</p>
-            </li>
-          ))}
-        </ul>
-      </section>
-    </div>
   );
 }
 
@@ -167,7 +95,7 @@ function SeedPacksSection({
         </span>
       </div>
 
-      <StatusBanner status={status} />
+      <SeedStatusBanner status={status} />
 
       <ul className="space-y-3">
         {PACKS.map((p) => (
@@ -219,7 +147,7 @@ function SeedPacksSection({
   );
 }
 
-function StatusBanner({
+function SeedStatusBanner({
   status,
 }: {
   status: { status?: string; pack?: string; msg?: string };
@@ -247,4 +175,193 @@ function StatusBanner({
     );
   }
   return null;
+}
+
+function AdminsSection({
+  admins,
+  viewerId,
+  status,
+}: {
+  admins: Array<{ id: string; email: string; displayName: string }>;
+  viewerId: string;
+  status: { admin_status?: string; admin_email?: string };
+}) {
+  return (
+    <section className="space-y-4">
+      <div className="flex items-baseline justify-between">
+        <h2 className="text-sm font-semibold uppercase tracking-widest text-stone-500">
+          Admins
+        </h2>
+        <span className="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded bg-emerald-100 text-emerald-700">
+          can_dev
+        </span>
+      </div>
+
+      <AdminStatusBanner status={status} />
+
+      <div className="rounded-xl border border-stone-200 bg-white px-5 py-4 space-y-4">
+        <p className="text-sm text-stone-600">
+          Anyone listed below has full access to dev-tools — including
+          impersonation and the DB inspector once those ship. Promote
+          carefully; revoke when no longer needed. The first admin is
+          bootstrapped via{" "}
+          <code className="text-xs">npm run db:grant-dev &lt;email&gt;</code>{" "}
+          against the database directly.
+        </p>
+
+        <ul className="divide-y divide-stone-100 border-y border-stone-100">
+          {admins.map((a) => (
+            <li
+              key={a.id}
+              className="flex items-center justify-between py-2 text-sm"
+            >
+              <div>
+                <span className="text-stone-900">{a.displayName}</span>{" "}
+                <span className="text-stone-500">({a.email})</span>
+                {a.id === viewerId ? (
+                  <span className="ml-2 text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-stone-100 text-stone-500">
+                    you
+                  </span>
+                ) : null}
+              </div>
+              {a.id === viewerId ? (
+                <span className="text-xs text-stone-400">cannot self-revoke</span>
+              ) : (
+                <form action={revokeDev}>
+                  <input type="hidden" name="userId" value={a.id} />
+                  <button
+                    type="submit"
+                    className="text-xs text-red-700 hover:text-red-900 underline"
+                  >
+                    Revoke
+                  </button>
+                </form>
+              )}
+            </li>
+          ))}
+        </ul>
+
+        <form
+          action={promoteToDev}
+          className="flex flex-wrap gap-2 items-center"
+        >
+          <label className="text-xs text-stone-600 sr-only" htmlFor="promote-email">
+            Email
+          </label>
+          <input
+            id="promote-email"
+            type="email"
+            name="email"
+            required
+            placeholder="email@example.com"
+            className="text-sm border border-stone-300 rounded-md px-3 py-1.5 flex-1 min-w-[16rem]"
+            autoComplete="off"
+          />
+          <button
+            type="submit"
+            className="bg-stone-900 text-white text-sm rounded-md px-4 py-1.5 hover:bg-stone-700"
+          >
+            Promote
+          </button>
+        </form>
+      </div>
+    </section>
+  );
+}
+
+function AdminStatusBanner({
+  status,
+}: {
+  status: { admin_status?: string; admin_email?: string };
+}) {
+  const s = status.admin_status;
+  if (!s) return null;
+  const email = status.admin_email;
+  if (s === "promoted") {
+    return (
+      <div className="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+        Promoted <strong>{email}</strong> to admin.
+      </div>
+    );
+  }
+  if (s === "revoked") {
+    return (
+      <div className="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+        Admin access revoked.
+      </div>
+    );
+  }
+  if (s === "no-user") {
+    return (
+      <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900">
+        No user found for <code>{email}</code>. They must sign up first.
+      </div>
+    );
+  }
+  if (s === "already-admin") {
+    return (
+      <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+        <code>{email}</code> already has admin access.
+      </div>
+    );
+  }
+  if (s === "missing-email") {
+    return (
+      <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900">
+        Email is required.
+      </div>
+    );
+  }
+  if (s === "cannot-self-revoke") {
+    return (
+      <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+        You can&apos;t revoke your own admin access from the panel. Use the
+        bootstrap CLI if you need to.
+      </div>
+    );
+  }
+  return null;
+}
+
+function ComingNextSection() {
+  const upcoming: Array<{ title: string; desc: string; ticket: string }> = [
+    {
+      title: "Time-travel",
+      desc: "Set the system clock forward/back; scheduled bakes materialize on demand.",
+      ticket: "ED4-3",
+    },
+    {
+      title: "Impersonation",
+      desc: "Jump into any seeded user's session. Audit-logged.",
+      ticket: "ED4-4",
+    },
+    {
+      title: "DB inspector",
+      desc: "Read-only table + row-count view. Catches stale-seed demos.",
+      ticket: "ED4-5",
+    },
+  ];
+  return (
+    <section>
+      <h2 className="text-sm font-semibold uppercase tracking-widest text-stone-500 mb-3">
+        Coming next
+      </h2>
+      <ul className="grid sm:grid-cols-3 gap-3">
+        {upcoming.map((s) => (
+          <li
+            key={s.title}
+            className="rounded-xl border border-stone-200 bg-white px-5 py-4"
+          >
+            <div className="flex items-center justify-between mb-1">
+              <h3 className="font-semibold text-stone-900 text-sm">{s.title}</h3>
+              <span className="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded bg-stone-100 text-stone-500">
+                {s.ticket}
+              </span>
+            </div>
+            <p className="text-xs text-stone-600 leading-relaxed">{s.desc}</p>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
 }
