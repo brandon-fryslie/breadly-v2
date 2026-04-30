@@ -12,8 +12,13 @@ import { test, expect } from "@playwright/test";
 import { clerk, setupClerkTestingToken } from "@clerk/testing/playwright";
 import { createClerkClient } from "@clerk/backend";
 import { db } from "../../src/db/client";
-import { bakerProfiles, listings, users } from "../../src/db/schema";
-import { eq, inArray } from "drizzle-orm";
+import {
+  bakerProfiles,
+  claims,
+  listings,
+  users,
+} from "../../src/db/schema";
+import { and, eq, inArray } from "drizzle-orm";
 
 function uniqueEmail(label: string): string {
   const suffix = Math.random().toString(36).slice(2, 8);
@@ -101,6 +106,10 @@ test.describe("listing detail", () => {
 
   test.afterAll(async () => {
     if (createdUserIds.length > 0) {
+      // Claims reference both eater and baker via listing — delete first.
+      await db
+        .delete(claims)
+        .where(inArray(claims.eaterId, createdUserIds));
       await db
         .delete(listings)
         .where(inArray(listings.bakerId, createdUserIds));
@@ -302,5 +311,258 @@ test.describe("listing detail", () => {
     const fakeId = "00000000-0000-0000-0000-000000000000";
     const response = await page.goto(`/listings/${fakeId}`);
     expect(response?.status()).toBe(404);
+  });
+
+  test("eater claim: last seat flips status='claimed', reveals pickup code + exact address", async ({
+    page,
+  }) => {
+    const bakerEmail = uniqueEmail("claim-baker");
+    const eaterEmail = uniqueEmail("claim-eater");
+    createdEmails.push(bakerEmail, eaterEmail);
+    const baker = await createClerkUser(bakerEmail);
+    const eater = await createClerkUser(eaterEmail);
+    createdUserIds.push(baker.id, eater.id);
+
+    await seedBaker({
+      email: bakerEmail,
+      clerkUserId: baker.id,
+      slug: `claim-${Math.random().toString(36).slice(2, 8)}`,
+    });
+    await db.insert(users).values({
+      id: eater.id,
+      email: eaterEmail,
+      displayName: "Hungry Person",
+      canBake: false,
+      canOperate: false,
+    });
+
+    // qty_total=1 so a single claim drains inventory and flips status.
+    const readyAt = new Date(Date.now() - 5 * 60_000);
+    const [row] = await db
+      .insert(listings)
+      .values({
+        bakerId: baker.id,
+        name: "Single-Seat Sourdough",
+        priceCents: 1500,
+        qtyTotal: 1,
+        qtyAvailable: 1,
+        status: "ready",
+        readyAt,
+        outOfOvenAt: readyAt,
+        location: { x: -105.282, y: 40.0274 },
+      })
+      .returning({ id: listings.id });
+    const listingId = row.id;
+
+    await page.goto("/");
+    await setupClerkTestingToken({ page });
+    await clerk.signIn({ page, emailAddress: eaterEmail });
+
+    await page.goto(`/listings/${listingId}`);
+
+    // Pre-claim: fuzzed address, claim button enabled.
+    await expect(page.getByTestId("listing-address-fuzzed")).toBeVisible();
+    await expect(page.getByTestId("listing-address-exact")).toHaveCount(0);
+    await expect(page.getByTestId("claim-cta")).toBeEnabled();
+
+    await page.getByTestId("claim-cta").click();
+
+    // Post-claim: pickup code + directions revealed; address now exact;
+    // listing status flipped to 'claimed'.
+    await expect(page.getByTestId("claim-pickup-code")).toBeVisible();
+    await expect(page.getByTestId("claim-pickup-code")).toHaveText(/^\d{4}$/);
+    await expect(page.getByTestId("claim-directions")).toHaveAttribute(
+      "href",
+      /maps\/dir/,
+    );
+    await expect(page.getByTestId("listing-address-exact")).toBeVisible();
+    await expect(page.getByTestId("listing-address-fuzzed")).toHaveCount(0);
+    await expect(page.getByTestId("listing-status")).toContainText(/claimed/i);
+
+    const after = await db.query.listings.findFirst({
+      where: eq(listings.id, listingId),
+    });
+    expect(after!.status).toBe("claimed");
+    expect(after!.qtyAvailable).toBe(0);
+
+    const claim = await db.query.claims.findFirst({
+      where: and(
+        eq(claims.listingId, listingId),
+        eq(claims.eaterId, eater.id),
+      ),
+    });
+    expect(claim).toBeTruthy();
+    expect(claim!.status).toBe("active");
+    expect(claim!.pickupCode).toMatch(/^\d{4}$/);
+  });
+
+  test("eater claim with extra inventory leaves status='ready'", async ({
+    page,
+  }) => {
+    const bakerEmail = uniqueEmail("claim-multi-baker");
+    const eaterEmail = uniqueEmail("claim-multi-eater");
+    createdEmails.push(bakerEmail, eaterEmail);
+    const baker = await createClerkUser(bakerEmail);
+    const eater = await createClerkUser(eaterEmail);
+    createdUserIds.push(baker.id, eater.id);
+
+    await seedBaker({
+      email: bakerEmail,
+      clerkUserId: baker.id,
+      slug: `claim-multi-${Math.random().toString(36).slice(2, 8)}`,
+    });
+    await db.insert(users).values({
+      id: eater.id,
+      email: eaterEmail,
+      displayName: "Hungry Person",
+      canBake: false,
+      canOperate: false,
+    });
+
+    const listingId = await seedListing({
+      bakerId: baker.id,
+      name: "Plenty Boule",
+      status: "ready",
+      readyMinutesFromNow: -5,
+    });
+
+    await page.goto("/");
+    await setupClerkTestingToken({ page });
+    await clerk.signIn({ page, emailAddress: eaterEmail });
+
+    await page.goto(`/listings/${listingId}`);
+    await page.getByTestId("claim-cta").click();
+    await expect(page.getByTestId("claim-pickup-code")).toBeVisible();
+
+    const after = await db.query.listings.findFirst({
+      where: eq(listings.id, listingId),
+    });
+    expect(after!.status).toBe("ready"); // 5 of 6 still available
+    expect(after!.qtyAvailable).toBe(5);
+  });
+
+  test("eater cancels claim: inventory restored, address re-fuzzed", async ({
+    page,
+  }) => {
+    const bakerEmail = uniqueEmail("cancel-baker");
+    const eaterEmail = uniqueEmail("cancel-eater");
+    createdEmails.push(bakerEmail, eaterEmail);
+    const baker = await createClerkUser(bakerEmail);
+    const eater = await createClerkUser(eaterEmail);
+    createdUserIds.push(baker.id, eater.id);
+
+    await seedBaker({
+      email: bakerEmail,
+      clerkUserId: baker.id,
+      slug: `cancel-${Math.random().toString(36).slice(2, 8)}`,
+    });
+    await db.insert(users).values({
+      id: eater.id,
+      email: eaterEmail,
+      displayName: "Hungry Person",
+      canBake: false,
+      canOperate: false,
+    });
+
+    const readyAt = new Date(Date.now() - 5 * 60_000);
+    const [row] = await db
+      .insert(listings)
+      .values({
+        bakerId: baker.id,
+        name: "Cancellable Country",
+        priceCents: 1500,
+        qtyTotal: 1,
+        qtyAvailable: 1,
+        status: "ready",
+        readyAt,
+        outOfOvenAt: readyAt,
+        location: { x: -105.282, y: 40.0274 },
+      })
+      .returning({ id: listings.id });
+    const listingId = row.id;
+
+    await page.goto("/");
+    await setupClerkTestingToken({ page });
+    await clerk.signIn({ page, emailAddress: eaterEmail });
+
+    await page.goto(`/listings/${listingId}`);
+    await page.getByTestId("claim-cta").click();
+    await expect(page.getByTestId("claim-pickup-code")).toBeVisible();
+
+    await page.getByTestId("claim-cancel").click();
+
+    // Back to claim form: address re-fuzzed, listing 'ready' again.
+    await expect(page.getByTestId("listing-address-fuzzed")).toBeVisible();
+    await expect(page.getByTestId("listing-address-exact")).toHaveCount(0);
+    await expect(page.getByTestId("claim-cta")).toBeEnabled();
+
+    const after = await db.query.listings.findFirst({
+      where: eq(listings.id, listingId),
+    });
+    expect(after!.status).toBe("ready");
+    expect(after!.qtyAvailable).toBe(1);
+
+    const claim = await db.query.claims.findFirst({
+      where: and(
+        eq(claims.listingId, listingId),
+        eq(claims.eaterId, eater.id),
+      ),
+    });
+    expect(claim!.status).toBe("cancelled_by_eater");
+    expect(claim!.cancelledAt).not.toBeNull();
+  });
+
+  test("baker pull cascades to active claims", async ({ page }) => {
+    const bakerEmail = uniqueEmail("cascade-baker");
+    const eaterEmail = uniqueEmail("cascade-eater");
+    createdEmails.push(bakerEmail, eaterEmail);
+    const baker = await createClerkUser(bakerEmail);
+    const eater = await createClerkUser(eaterEmail);
+    createdUserIds.push(baker.id, eater.id);
+
+    await seedBaker({
+      email: bakerEmail,
+      clerkUserId: baker.id,
+      slug: `cascade-${Math.random().toString(36).slice(2, 8)}`,
+    });
+    await db.insert(users).values({
+      id: eater.id,
+      email: eaterEmail,
+      displayName: "Hungry Person",
+      canBake: false,
+      canOperate: false,
+    });
+
+    const listingId = await seedListing({
+      bakerId: baker.id,
+      name: "Doomed Loaf",
+      status: "ready",
+      readyMinutesFromNow: -5,
+    });
+
+    // Eater claims first.
+    await page.goto("/");
+    await setupClerkTestingToken({ page });
+    await clerk.signIn({ page, emailAddress: eaterEmail });
+    await page.goto(`/listings/${listingId}`);
+    await page.getByTestId("claim-cta").click();
+    await expect(page.getByTestId("claim-pickup-code")).toBeVisible();
+    await clerk.signOut({ page });
+
+    // Baker pulls the listing.
+    await setupClerkTestingToken({ page });
+    await clerk.signIn({ page, emailAddress: bakerEmail });
+    await page.goto(`/listings/${listingId}`);
+    await page.getByTestId("action-pull").click();
+    await expect(page.getByTestId("listing-status")).toContainText(/pulled/i);
+
+    const claim = await db.query.claims.findFirst({
+      where: and(
+        eq(claims.listingId, listingId),
+        eq(claims.eaterId, eater.id),
+      ),
+    });
+    expect(claim!.status).toBe("cancelled_by_baker");
+    expect(claim!.cancelledAt).not.toBeNull();
   });
 });

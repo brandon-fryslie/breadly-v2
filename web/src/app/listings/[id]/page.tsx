@@ -20,10 +20,17 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import {
   getListingDetail,
-  viewerHasActiveClaim,
+  getViewerActiveClaim,
   type ListingDetail,
+  type ViewerActiveClaim,
 } from "./queries";
-import { markOutOfOven, markSoldOut, pullListing } from "./actions";
+import {
+  cancelClaimByEater,
+  createClaim,
+  markOutOfOven,
+  markSoldOut,
+  pullListing,
+} from "./actions";
 
 export const dynamic = "force-dynamic";
 
@@ -92,7 +99,7 @@ const STATUS_BADGE: Record<
 type Viewer =
   | { kind: "anonymous" }
   | { kind: "owner" }
-  | { kind: "eater"; hasActiveClaim: boolean };
+  | { kind: "eater"; activeClaim: ViewerActiveClaim | null };
 
 export default async function ListingDetailPage({ params }: PageProps) {
   const { id } = await params;
@@ -137,8 +144,8 @@ async function resolveViewer(
 ): Promise<Viewer> {
   if (!userId) return { kind: "anonymous" };
   if (userId === listing.bakerId) return { kind: "owner" };
-  const hasActiveClaim = await viewerHasActiveClaim(listing.id, userId);
-  return { kind: "eater", hasActiveClaim };
+  const activeClaim = await getViewerActiveClaim(listing.id, userId);
+  return { kind: "eater", activeClaim };
 }
 
 function Hero({ listing, now }: { listing: ListingDetail; now: Date }) {
@@ -242,7 +249,7 @@ function PrivacyBlock({
   // claim. Everyone else sees the neighborhood line.
   const showExact =
     viewer.kind === "owner" ||
-    (viewer.kind === "eater" && viewer.hasActiveClaim);
+    (viewer.kind === "eater" && viewer.activeClaim !== null);
 
   const exactLines = [
     listing.addressLine,
@@ -286,7 +293,7 @@ function ViewerActions({
   if (viewer.kind === "owner") {
     return <OwnerToolbar listing={listing} />;
   }
-  return <EaterClaimPlaceholder listing={listing} viewer={viewer} />;
+  return <EaterClaimSection listing={listing} viewer={viewer} />;
 }
 
 // Baker-side actions. Which buttons are *available* is data: the listing's
@@ -381,26 +388,120 @@ function ActionForm({
   );
 }
 
-function EaterClaimPlaceholder({
+// Eater-facing actions panel. Three mutually exclusive states encoded as
+// data, not as nested if/else: an active claim (reveal pickup code +
+// directions + cancel), an anonymous viewer (sign-in link), or a signed-in
+// eater facing a fresh listing (claim form when listing is ready, disabled
+// notice otherwise). Each state gets its own component with the same outer
+// shell so layout doesn't shuffle. [LAW:dataflow-not-control-flow]
+function EaterClaimSection({
   listing,
   viewer,
 }: {
   listing: ListingDetail;
   viewer: Viewer;
 }) {
-  const claimable =
-    listing.status === "ready" && listing.qtyAvailable > 0;
+  if (viewer.kind === "eater" && viewer.activeClaim) {
+    return <ClaimedReveal listing={listing} claim={viewer.activeClaim} />;
+  }
+  if (viewer.kind === "anonymous") {
+    return <SignInToClaim listing={listing} />;
+  }
+  return <ClaimForm listing={listing} />;
+}
 
-  const cta =
-    viewer.kind === "anonymous"
-      ? {
-          label: "Sign in to claim",
-          href: `/sign-in?redirect_url=/listings/${listing.id}`,
-        }
-      : viewer.kind === "eater" && viewer.hasActiveClaim
-        ? { label: "You have a claim on this loaf", href: "/me" }
-        : { label: "Claim a loaf", href: `/listings/${listing.id}` };
+function ClaimedReveal({
+  listing,
+  claim,
+}: {
+  listing: ListingDetail;
+  claim: ViewerActiveClaim;
+}) {
+  const directionsHref = buildDirectionsHref(listing);
 
+  return (
+    <section
+      className="rounded-xl border border-emerald-200 bg-emerald-50 px-5 py-5 space-y-4"
+      data-testid="eater-cta"
+    >
+      <div className="flex items-baseline justify-between">
+        <h2 className="text-sm font-semibold tracking-tight text-emerald-900">
+          You claimed this loaf
+        </h2>
+        <span className="text-[10px] uppercase tracking-widest text-emerald-800">
+          show this code at pickup
+        </span>
+      </div>
+
+      <div className="flex items-center gap-4 rounded-lg border border-emerald-200 bg-white px-4 py-3">
+        <div
+          className="font-mono text-3xl tabular-nums tracking-[0.3em] text-stone-900"
+          data-testid="claim-pickup-code"
+        >
+          {claim.pickupCode}
+        </div>
+        <div className="text-xs text-stone-600">
+          <p className="font-semibold text-stone-800">Pickup code</p>
+          <p>
+            {claim.qty} {claim.qty === 1 ? "loaf" : "loaves"} held for you
+          </p>
+        </div>
+      </div>
+
+      {directionsHref ? (
+        <a
+          href={directionsHref}
+          target="_blank"
+          rel="noreferrer"
+          data-testid="claim-directions"
+          className="inline-flex items-center text-sm rounded-md border border-emerald-300 bg-white px-4 py-2 text-emerald-900 hover:border-emerald-500 hover:text-emerald-950"
+        >
+          Get directions
+        </a>
+      ) : null}
+
+      <form action={cancelClaimByEater}>
+        <input type="hidden" name="id" value={listing.id} />
+        <button
+          type="submit"
+          data-testid="claim-cancel"
+          className="text-xs text-stone-500 underline hover:text-stone-800"
+        >
+          Cancel my claim
+        </button>
+      </form>
+    </section>
+  );
+}
+
+function SignInToClaim({ listing }: { listing: ListingDetail }) {
+  const claimable = listing.status === "ready" && listing.qtyAvailable > 0;
+  return (
+    <section
+      className="rounded-xl border border-stone-200 bg-white px-5 py-4 space-y-3"
+      data-testid="eater-cta"
+    >
+      <div className="flex items-baseline justify-between">
+        <h2 className="text-sm font-semibold tracking-tight text-stone-900">
+          {claimable ? "Available now" : "Not currently claimable"}
+        </h2>
+      </div>
+      <Link
+        href={`/sign-in?redirect_url=/listings/${listing.id}`}
+        aria-disabled={!claimable}
+        data-testid="claim-cta"
+        className={`inline-flex items-center bg-stone-900 text-white text-sm rounded-md px-4 py-2 hover:bg-stone-700 ${
+          claimable ? "" : "opacity-40 pointer-events-none"
+        }`}
+      >
+        Sign in to claim
+      </Link>
+    </section>
+  );
+}
+
+function ClaimForm({ listing }: { listing: ListingDetail }) {
+  const claimable = listing.status === "ready" && listing.qtyAvailable > 0;
   return (
     <section
       className="rounded-xl border border-stone-200 bg-white px-5 py-4 space-y-3"
@@ -411,21 +512,34 @@ function EaterClaimPlaceholder({
           {claimable ? "Available now" : "Not currently claimable"}
         </h2>
         <span className="text-[10px] uppercase tracking-widest text-stone-500">
-          claim flow ships in ED2-2
+          {listing.qtyAvailable} of {listing.qtyTotal} left
         </span>
       </div>
-      <Link
-        href={cta.href}
-        aria-disabled={!claimable}
-        data-testid="claim-cta"
-        className={`inline-flex items-center bg-stone-900 text-white text-sm rounded-md px-4 py-2 hover:bg-stone-700 ${
-          claimable ? "" : "opacity-40 pointer-events-none"
-        }`}
-      >
-        {cta.label}
-      </Link>
+      <form action={createClaim}>
+        <input type="hidden" name="id" value={listing.id} />
+        <button
+          type="submit"
+          disabled={!claimable}
+          data-testid="claim-cta"
+          className="inline-flex items-center bg-stone-900 text-white text-sm rounded-md px-4 py-2 hover:bg-stone-700 disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          Claim a loaf
+        </button>
+      </form>
     </section>
   );
+}
+
+function buildDirectionsHref(listing: ListingDetail): string | null {
+  const parts = [
+    listing.addressLine,
+    [listing.city, listing.region, listing.postalCode]
+      .filter(Boolean)
+      .join(", "),
+  ].filter((s): s is string => Boolean(s && s.length > 0));
+  if (parts.length === 0) return null;
+  const dest = encodeURIComponent(parts.join(" "));
+  return `https://www.google.com/maps/dir/?api=1&destination=${dest}`;
 }
 
 function BakerLink({ listing }: { listing: ListingDetail }) {

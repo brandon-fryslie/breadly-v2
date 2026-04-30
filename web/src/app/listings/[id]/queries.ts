@@ -147,20 +147,41 @@ export async function getListingDetail(id: string): Promise<ListingDetail | null
   };
 }
 
-// Whether the given user has an active claim on this listing. Drives the
-// "exact address" reveal in the privacy gradient.
-export async function viewerHasActiveClaim(
+// The viewer's active claim on this listing, or null. The shape is the
+// single source for both the privacy gradient (exact address reveal) and
+// the eater-facing pickup-code panel — one query, one value, two consumers.
+// [LAW:one-source-of-truth]
+export type ViewerActiveClaim = {
+  id: string;
+  qty: number;
+  pickupCode: string;
+  createdAt: Date;
+};
+
+export async function getViewerActiveClaim(
   listingId: string,
   userId: string,
-): Promise<boolean> {
-  const rows = await db.execute<{ exists: boolean }>(sql`
-    SELECT EXISTS (
-      SELECT 1
-      FROM claims c
-      WHERE c.listing_id = ${listingId}
-        AND c.eater_id = ${userId}
-        AND c.status = 'active'
-    ) AS exists
+): Promise<ViewerActiveClaim | null> {
+  const rows = await db.execute<{
+    id: string;
+    qty: number;
+    pickup_code: string;
+    created_at: string | Date;
+  }>(sql`
+    SELECT id, qty, pickup_code, created_at
+    FROM claims
+    WHERE listing_id = ${listingId}
+      AND eater_id = ${userId}
+      AND status = 'active'
+    ORDER BY created_at DESC
+    LIMIT 1
   `);
-  return rows[0]?.exists === true;
+  const r = rows[0];
+  if (!r) return null;
+  return {
+    id: r.id,
+    qty: r.qty,
+    pickupCode: r.pickup_code,
+    createdAt: toDate(r.created_at),
+  };
 }
