@@ -8,9 +8,10 @@ const isProtected = createRouteMatcher([
   "/baker(.*)",
   "/operator(.*)",
   "/me(.*)",
-  // /dev-tools has its own env+capability gate in src/lib/dev-tools-gate.ts;
-  // we still require a Clerk session at the edge so the gate can read userId.
-  "/dev-tools(.*)",
+  // /dev-tools is intentionally NOT here. Edge protection redirects anon
+  // traffic to sign-in, which leaks that the route exists. The single gate
+  // in src/lib/dev-tools-gate.ts handles auth itself: missing session →
+  // notFound() → indistinguishable from a non-existent route.
 ]);
 
 export default clerkMiddleware(async (auth, req) => {
