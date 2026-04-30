@@ -120,7 +120,12 @@ test.describe("post-a-loaf", () => {
 
     await page.getByLabel(/bread name/i).fill("Country sourdough");
     await page.getByLabel(/blurb/i).fill("Just out — still warm.");
-    await page.getByLabel(/photo url/i).fill("https://example.com/loaf.jpg");
+    // File upload requires GCS creds; the manual-URL escape hatch is the
+    // tested path here. The signed-URL flow has its own route smoke test.
+    await page.getByRole("button", { name: /paste a url/i }).click();
+    await page
+      .getByPlaceholder("https://…")
+      .fill("https://example.com/loaf.jpg");
     await page.getByLabel(/price/i).fill("9.50");
     await page.getByLabel(/quantity/i).fill("6");
     await page.getByLabel(/ready at/i).fill(futureLocal);

@@ -24,8 +24,8 @@ resource "google_storage_bucket" "photos" {
 
   cors {
     origin          = ["*"]
-    method          = ["GET", "HEAD"]
-    response_header = ["Content-Type"]
+    method          = ["GET", "HEAD", "PUT"]
+    response_header = ["Content-Type", "Content-MD5"]
     max_age_seconds = 3600
   }
 }

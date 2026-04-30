@@ -20,6 +20,14 @@ resource "google_service_account" "runtime" {
   depends_on = [module.project_services]
 }
 
+// Required for v4 signed-URL minting via IAM SignBlob (no private key in
+// the runtime; SA signs blobs as itself).
+resource "google_service_account_iam_member" "runtime_sign_self" {
+  service_account_id = google_service_account.runtime.name
+  role               = "roles/iam.serviceAccountTokenCreator"
+  member             = "serviceAccount:${google_service_account.runtime.email}"
+}
+
 module "database" {
   source              = "../../modules/database"
   project_id          = var.project_id

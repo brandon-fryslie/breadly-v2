@@ -2,6 +2,7 @@
 
 import { useActionState, useRef } from "react";
 import { createListing, type CreateListingState } from "./actions";
+import { PhotoField } from "./photo-field";
 
 type Tag = {
   id: string;
@@ -104,24 +105,12 @@ export function PostLoafForm({ allTags }: { allTags: Tag[] }) {
         ) : null}
       </label>
 
-      <label className="text-sm">
-        <span className="block text-stone-700 mb-1 font-medium">
-          Photo URL
-        </span>
-        <input
-          name="photoUrl"
-          type="url"
-          inputMode="url"
-          defaultValue={state.values.photoUrl}
-          placeholder="https://…"
-          className={fieldClass(state.fieldErrors.photoUrl)}
-        />
-        {state.fieldErrors.photoUrl ? (
-          <span className="text-xs text-red-600 mt-1 block">
-            {state.fieldErrors.photoUrl}
-          </span>
-        ) : null}
-      </label>
+      <PhotoField
+        defaultValue={state.values.photoUrl}
+        error={state.fieldErrors.photoUrl}
+        fieldClass={fieldClass}
+      />
+
 
       <div className="grid grid-cols-2 gap-4">
         <label className="text-sm">
