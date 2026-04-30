@@ -60,7 +60,7 @@ test.describe("/api/uploads/sign", () => {
     expect(res.status()).toBe(401);
   });
 
-  test("rejects non-baker callers with 403", async ({ page, request }) => {
+  test("rejects non-baker callers with 403", async ({ page }) => {
     const email = uniqueEmail("sign-nonbaker");
     createdEmails.push(email);
     const cu = await createClerkUser(email);
@@ -76,16 +76,16 @@ test.describe("/api/uploads/sign", () => {
     await setupClerkTestingToken({ page });
     await clerk.signIn({ page, emailAddress: email });
 
-    const res = await request.post("/api/uploads/sign", {
+    // page.request shares the BrowserContext that clerk.signIn populated;
+    // the bare `request` fixture does not, so it would arrive without a
+    // session cookie and 401 before reaching the canBake check.
+    const res = await page.request.post("/api/uploads/sign", {
       data: { contentType: "image/jpeg" },
     });
     expect(res.status()).toBe(403);
   });
 
-  test("rejects unsupported content types with 400", async ({
-    page,
-    request,
-  }) => {
+  test("rejects unsupported content types with 400", async ({ page }) => {
     const email = uniqueEmail("sign-baker-bad-ct");
     createdEmails.push(email);
     const cu = await createClerkUser(email);
@@ -107,7 +107,7 @@ test.describe("/api/uploads/sign", () => {
     await setupClerkTestingToken({ page });
     await clerk.signIn({ page, emailAddress: email });
 
-    const res = await request.post("/api/uploads/sign", {
+    const res = await page.request.post("/api/uploads/sign", {
       data: { contentType: "application/pdf" },
     });
     expect(res.status()).toBe(400);
@@ -117,7 +117,6 @@ test.describe("/api/uploads/sign", () => {
 
   test("returns a signed URL for a baker with a valid content type", async ({
     page,
-    request,
   }) => {
     test.skip(!hasAdc, "no ADC configured — skipping live-signing assertion");
 
@@ -142,7 +141,7 @@ test.describe("/api/uploads/sign", () => {
     await setupClerkTestingToken({ page });
     await clerk.signIn({ page, emailAddress: email });
 
-    const res = await request.post("/api/uploads/sign", {
+    const res = await page.request.post("/api/uploads/sign", {
       data: { contentType: "image/jpeg" },
     });
     expect(res.status()).toBe(200);
