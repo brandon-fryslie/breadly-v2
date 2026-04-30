@@ -12,12 +12,16 @@ import { db } from "@/db/client";
 import { users } from "@/db/schema";
 import { eq } from "drizzle-orm";
 
-async function getCapabilities(): Promise<{ canBake: boolean; canOperate: boolean } | null> {
+async function getCapabilities(): Promise<{
+  canBake: boolean;
+  canOperate: boolean;
+  canDev: boolean;
+} | null> {
   const { userId } = await auth();
   if (!userId) return null;
   const row = await db.query.users.findFirst({
     where: eq(users.id, userId),
-    columns: { canBake: true, canOperate: true },
+    columns: { canBake: true, canOperate: true, canDev: true },
   });
   return row ?? null;
 }
@@ -37,6 +41,13 @@ export async function Header() {
           ) : null}
           {caps?.canOperate ? (
             <Link href="/operator" className="hover:text-stone-900">Operator</Link>
+          ) : null}
+          {/* Mirrors the canBake/canOperate pattern. The link is gated on
+              the local capability flag; the page itself enforces both the
+              env gate (BREADLY_DEV_MODE) and capability via the single
+              gate in src/lib/dev-tools-gate.ts. [LAW:single-enforcer] */}
+          {caps?.canDev ? (
+            <Link href="/dev-tools" className="hover:text-stone-900">Dev tools</Link>
           ) : null}
         </nav>
         <div className="ml-auto flex items-center gap-3">
