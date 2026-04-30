@@ -42,8 +42,8 @@ export type StorefrontScheduleProjection = {
   kind: "recurring" | "one_off";
 };
 
-export type StorefrontPlaceholderRating = {
-  rating: number;
+export type StorefrontRating = {
+  rating: number; // 1.0–5.0; 0 when reviews=0
   reviews: number;
 };
 
@@ -53,25 +53,11 @@ export type Storefront = {
   // Aggregated tag slugs across the baker's recent inventory + schedules,
   // de-duplicated. Drives the "kitchen tags / styles" strip on the hero.
   signatureTags: string[];
-  rating: StorefrontPlaceholderRating;
+  rating: StorefrontRating;
   ready: StorefrontListing[];
   scheduled: StorefrontListing[];
   upcoming: StorefrontScheduleProjection[];
 };
-
-// Same hash → rating shape used by lib/queries.ts; placeholder until the
-// ratings epic ships. Kept inline so /b/<slug> doesn't import the eater
-// feed module just for this one helper. [LAW:one-type-per-behavior]:
-// when the real ratings table lands, both sites consume the same query.
-function placeholderRating(bakerId: string): StorefrontPlaceholderRating {
-  let h = 0;
-  for (let i = 0; i < bakerId.length; i++) {
-    h = (h * 31 + bakerId.charCodeAt(i)) | 0;
-  }
-  const r = (Math.abs(h) % 51) / 100; // 0.00 - 0.50
-  const reviews = 12 + (Math.abs(h >> 8) % 369);
-  return { rating: 4.5 + r, reviews };
-}
 
 const toDate = (v: string | Date): Date =>
   typeof v === "string" ? new Date(v) : v;
@@ -128,7 +114,7 @@ export const getStorefront = cache(
 
     const userId = profile.userId;
 
-    const [ownerRow, listingRows, scheduleRows] = await Promise.all([
+    const [ownerRow, listingRows, scheduleRows, ratingRow] = await Promise.all([
       db.execute<{ display_name: string }>(sql`
         SELECT display_name FROM users WHERE id = ${userId} LIMIT 1
       `),
@@ -227,6 +213,16 @@ export const getStorefront = cache(
         ORDER BY ready_at
         LIMIT 50
       `),
+      // Aggregate rating across every claim where this baker was rated.
+      // Always returns one row — review_count = 0 means "no ratings yet".
+      // [LAW:one-source-of-truth] same shape as /baker today + eater feed.
+      db.execute<{ avg_score: number | null; review_count: number }>(sql`
+        SELECT
+          AVG(score)::float AS avg_score,
+          COUNT(*)::int AS review_count
+        FROM ratings
+        WHERE rated_id = ${userId}
+      `),
     ]);
 
     if (ownerRow.length === 0) {
@@ -257,11 +253,18 @@ export const getStorefront = cache(
     for (const u of upcoming) for (const t of u.tagSlugs) tagBag.add(t);
     const signatureTags = Array.from(tagBag).sort();
 
+    const reviews = ratingRow[0]?.review_count ?? 0;
+    const avg = ratingRow[0]?.avg_score;
+    const rating: StorefrontRating = {
+      reviews,
+      rating: reviews === 0 || avg === null ? 0 : Number(avg),
+    };
+
     return {
       profile,
       ownerName: ownerRow[0].display_name,
       signatureTags,
-      rating: placeholderRating(userId),
+      rating,
       ready,
       scheduled,
       upcoming,

@@ -32,7 +32,9 @@ export const matchScore = (
   if (prefs.include.some((t) => l.tags.includes(t))) score += 5;
   if (prefs.exclude.some((t) => l.tags.includes(t))) score -= 10;
   score += Math.max(0, 3 - l.distanceMi);
-  score += (l.baker.rating - 4.5) * 4;
+  // Unrated bakers (reviews === 0) contribute nothing to score; only
+  // bakers with a rating shift the ranking. [LAW:dataflow-not-control-flow]
+  score += l.baker.reviews > 0 ? (l.baker.rating - 4.5) * 4 : 0;
   if (l.readyMinutesFromNow > -120 && l.readyMinutesFromNow < 180) score += 2;
   return score;
 };

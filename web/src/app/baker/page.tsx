@@ -16,12 +16,15 @@ import { users } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import {
   getBakerToday,
+  type BakerRating,
   type ClaimedSeat,
+  type RecentHandoff,
   type TodayListing,
 } from "./queries";
 import {
   confirmPickupByCode,
   markPickedUpByBakerSelf,
+  rateHandoffByBaker,
 } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -57,7 +60,7 @@ export default async function BakerHome() {
   });
   if (!me?.canBake) redirect("/me");
 
-  const { profile, inOven, comingUpToday, claimedSeats, recentlyPickedUp } =
+  const { profile, rating, inOven, comingUpToday, claimedSeats, recentHandoffs } =
     await getBakerToday(userId);
 
   const now = new Date();
@@ -69,13 +72,14 @@ export default async function BakerHome() {
         neighborhood={profile.neighborhood}
         slug={profile.slug}
         pickupWindowText={profile.pickupWindowText}
+        rating={rating}
       />
 
       <CounterStrip
         inOven={inOven.length}
         comingUp={comingUpToday.length}
         claimed={claimedSeats.length}
-        pickedUp={recentlyPickedUp.length}
+        pickedUp={recentHandoffs.length}
       />
 
       <div className="flex flex-wrap items-center gap-3">
@@ -131,13 +135,13 @@ export default async function BakerHome() {
 
       <Section
         eyebrow="04"
-        title="Recently picked up"
-        sub="Last 24 hours"
+        title="Recent handoffs"
+        sub="Last 24 hours · rate each one"
         empty="No handoffs in the last 24 hours."
-        count={recentlyPickedUp.length}
+        count={recentHandoffs.length}
       >
-        {recentlyPickedUp.map((l) => (
-          <PickedUpRow key={l.id} listing={l} now={now} />
+        {recentHandoffs.map((h) => (
+          <HandoffRow key={h.claimId} handoff={h} now={now} />
         ))}
       </Section>
 
@@ -164,11 +168,13 @@ function Hero({
   neighborhood,
   slug,
   pickupWindowText,
+  rating,
 }: {
   bakeryName: string;
   neighborhood: string | null;
   slug: string;
   pickupWindowText: string | null;
+  rating: BakerRating;
 }) {
   return (
     <header className="border-b border-stone-200 pb-6">
@@ -183,6 +189,7 @@ function Hero({
         {pickupWindowText ? (
           <span className="text-stone-500">{pickupWindowText}</span>
         ) : null}
+        <RatingBadge rating={rating} testid="baker-rating" />
         <Link
           href={`/b/${slug}`}
           className="font-mono underline decoration-amber-400 hover:decoration-stone-600"
@@ -192,6 +199,28 @@ function Hero({
         </Link>
       </div>
     </header>
+  );
+}
+
+function RatingBadge({
+  rating,
+  testid,
+}: {
+  rating: BakerRating;
+  testid: string;
+}) {
+  if (rating.reviews === 0) {
+    return (
+      <span className="text-stone-500" data-testid={testid}>
+        <span className="text-stone-400">★</span> No ratings yet
+      </span>
+    );
+  }
+  return (
+    <span data-testid={testid}>
+      <span className="text-amber-600">★</span> {rating.rating.toFixed(1)}
+      <span className="text-stone-400"> ({rating.reviews})</span>
+    </span>
   );
 }
 
@@ -434,23 +463,115 @@ function ClaimedSeatRow({ seat }: { seat: ClaimedSeat }) {
   );
 }
 
-function PickedUpRow({
-  listing,
+// One row per recent handoff. Same outer shell on every render — the
+// inner block is either a rate-this-handoff form (myRating === null) or
+// a "you rated 👍" receipt. Layout doesn't shuffle as state changes.
+// [LAW:dataflow-not-control-flow]
+function HandoffRow({
+  handoff,
   now,
 }: {
-  listing: TodayListing;
+  handoff: RecentHandoff;
   now: Date;
 }) {
+  const rated = handoff.myRating !== null;
   return (
-    <div className="flex items-center justify-between gap-4 text-sm text-stone-600 border-b border-stone-100 pb-2">
-      <span className="truncate">
-        <span className="text-emerald-600 mr-2">✓</span>
-        {listing.name}
+    <div
+      className="rounded-lg border border-stone-200 bg-white px-4 py-3 space-y-3"
+      data-testid="handoff-row"
+      data-claim-id={handoff.claimId}
+    >
+      <div className="flex items-center gap-3">
+        <span
+          className="text-emerald-600 text-lg"
+          aria-hidden
+        >
+          ✓
+        </span>
+        <div className="flex-1 min-w-0">
+          <h3 className="font-semibold text-stone-900 truncate">
+            {handoff.listingName}
+          </h3>
+          <p className="text-xs text-stone-500">
+            {handoff.eaterName} · picked up{" "}
+            {fmtRelative(handoff.pickedUpAt, now)}
+          </p>
+        </div>
+      </div>
+
+      {rated ? (
+        <RatedReceipt rating={handoff.myRating!} />
+      ) : (
+        <RateHandoffForm claimId={handoff.claimId} />
+      )}
+    </div>
+  );
+}
+
+function RateHandoffForm({ claimId }: { claimId: string }) {
+  return (
+    <form
+      action={rateHandoffByBaker}
+      className="space-y-2"
+      data-testid="rate-handoff-form"
+    >
+      <input type="hidden" name="claimId" value={claimId} />
+      <input
+        name="comment"
+        maxLength={500}
+        placeholder="Optional note about this handoff"
+        aria-label="Optional note about this handoff"
+        data-testid="rate-handoff-comment"
+        className="block w-full text-sm rounded-md border border-stone-300 px-3 py-1.5 focus:border-stone-500 focus:outline-none"
+      />
+      <div className="flex items-center gap-2">
+        <button
+          type="submit"
+          name="score"
+          value="5"
+          data-testid="rate-handoff-up"
+          className="inline-flex items-center text-sm rounded-md border border-emerald-300 bg-white px-3 py-1.5 text-emerald-800 hover:border-emerald-500 hover:text-emerald-950"
+          aria-label="Rate this handoff thumbs up"
+        >
+          👍 Smooth handoff
+        </button>
+        <button
+          type="submit"
+          name="score"
+          value="1"
+          data-testid="rate-handoff-down"
+          className="inline-flex items-center text-sm rounded-md border border-rose-300 bg-white px-3 py-1.5 text-rose-800 hover:border-rose-500 hover:text-rose-950"
+          aria-label="Rate this handoff thumbs down"
+        >
+          👎 Something off
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function RatedReceipt({
+  rating,
+}: {
+  rating: { score: number; comment: string | null };
+}) {
+  const positive = rating.score >= 3;
+  return (
+    <div
+      className="text-xs text-stone-600 flex items-baseline gap-2"
+      data-testid="rate-handoff-receipt"
+    >
+      <span className="text-base" aria-hidden>
+        {positive ? "👍" : "👎"}
       </span>
-      <span className="text-xs text-stone-500">
-        {listing.qtyTotal} {listing.qtyTotal === 1 ? "loaf" : "loaves"} ·{" "}
-        {fmtRelative(listing.updatedAt, now)}
+      <span className="text-stone-500">
+        {positive ? "Smooth handoff" : "Something off"}
       </span>
+      {rating.comment ? (
+        <span className="text-stone-700 italic truncate">
+          “{rating.comment}”
+        </span>
+      ) : null}
     </div>
   );
 }

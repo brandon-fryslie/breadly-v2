@@ -215,10 +215,16 @@ function Hero({
             </>
           ) : null}
           <span>·</span>
-          <span data-testid="storefront-rating">
-            <span className="text-amber-600">★</span> {rating.rating.toFixed(1)}
-            <span className="text-stone-400"> ({rating.reviews})</span>
-          </span>
+          {rating.reviews === 0 ? (
+            <span data-testid="storefront-rating">
+              <span className="text-stone-400">★</span> No ratings yet
+            </span>
+          ) : (
+            <span data-testid="storefront-rating">
+              <span className="text-amber-600">★</span> {rating.rating.toFixed(1)}
+              <span className="text-stone-400"> ({rating.reviews})</span>
+            </span>
+          )}
         </div>
       </div>
 

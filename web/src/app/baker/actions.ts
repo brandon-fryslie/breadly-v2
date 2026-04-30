@@ -20,6 +20,8 @@ import { db } from "@/db/client";
 import { consolidateListingPickedUp } from "@/app/listings/[id]/queries";
 
 const PICKUP_CODE_RE = /^\d{4}$/;
+const RATING_SCORES = new Set([1, 5]);
+const COMMENT_MAX = 500;
 
 export async function confirmPickupByCode(formData: FormData): Promise<void> {
   const listingId = String(formData.get("listingId") ?? "");
@@ -102,4 +104,52 @@ export async function markPickedUpByBakerSelf(
   revalidatePath("/baker");
   revalidatePath(`/listings/${picked[0].listing_id}`);
   revalidatePath("/me");
+}
+
+// Baker rates the eater for a completed handoff. Same join-on-ownership
+// shape as the handoff actions: the WHERE clause proves the baker owns
+// the claim's listing AND the claim has reached picked_up. A forged
+// claim id, a still-active claim, or someone else's listing all collapse
+// to 0 rows.
+//
+// Idempotency lives in the DB: ratings_rater_claim_idx is UNIQUE on
+// (rater_id, claim_id), so an accidental double-submit is an
+// ON CONFLICT DO NOTHING — same final state every time.
+// [LAW:dataflow-not-control-flow]
+export async function rateHandoffByBaker(formData: FormData): Promise<void> {
+  const claimId = String(formData.get("claimId") ?? "");
+  const scoreRaw = Number(formData.get("score"));
+  const commentRaw = String(formData.get("comment") ?? "").trim();
+  if (!claimId) redirect("/baker");
+
+  const { userId } = await auth();
+  if (!userId) redirect("/sign-in?redirect_url=/baker");
+
+  if (!RATING_SCORES.has(scoreRaw)) {
+    throw new Error(`rateHandoffByBaker: invalid score ${scoreRaw}`);
+  }
+  const comment = commentRaw.length === 0 ? null : commentRaw.slice(0, COMMENT_MAX);
+
+  const inserted = await db.execute<{ id: string; listing_id: string }>(sql`
+    INSERT INTO ratings (claim_id, rater_id, rated_id, score, comment)
+    SELECT c.id, ${userId}, c.eater_id, ${scoreRaw}, ${comment}
+    FROM claims c
+    JOIN listings l ON l.id = c.listing_id
+    WHERE c.id = ${claimId}
+      AND l.baker_id = ${userId}
+      AND c.status = 'picked_up'
+    ON CONFLICT (rater_id, claim_id) DO NOTHING
+    RETURNING id, (SELECT listing_id FROM claims WHERE id = ${claimId}) AS listing_id
+  `);
+
+  // Re-submit on an already-rated claim is a no-op (returns 0 rows). Bad
+  // claim id / wrong owner / wrong status also return 0; we can't tell
+  // these apart from the caller's perspective, by design.
+  // [LAW:no-defensive-null-guards]
+  const listingId = inserted[0]?.listing_id;
+
+  revalidatePath("/baker");
+  if (listingId) {
+    revalidatePath(`/listings/${listingId}`);
+  }
 }

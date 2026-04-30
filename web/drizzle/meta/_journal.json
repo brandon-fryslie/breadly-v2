@@ -15,6 +15,13 @@
       "when": 1777396418246,
       "tag": "0001_add_can_dev",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1777588362294,
+      "tag": "0002_add_ratings",
+      "breakpoints": true
     }
   ]
 }

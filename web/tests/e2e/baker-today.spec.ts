@@ -162,7 +162,7 @@ test.describe("baker today screen", () => {
       { name: "Imminent Sourdough", status: "scheduled", readyMinutesFromNow: 90, qtyTotal: 6, qtyAvailable: 6 },
       // NOT coming_up: scheduled too far out
       { name: "Tomorrow's Rye", status: "scheduled", readyMinutesFromNow: 60 * 24, qtyTotal: 4, qtyAvailable: 4 },
-      // recently_picked
+      // recent handoff (claim row, below)
       { name: "Picked-up Country", status: "picked_up", readyMinutesFromNow: -60 * 3, qtyTotal: 2, qtyAvailable: 0 },
     ]);
 
@@ -174,6 +174,17 @@ test.describe("baker today screen", () => {
       qty: 1,
       status: "active",
       pickupCode: "4271",
+    });
+
+    // A picked-up claim within the last 24h → "Recent handoffs".
+    const pickedListingId = seeded.find((l) => l.name === "Picked-up Country")!.id;
+    await db.insert(claims).values({
+      listingId: pickedListingId,
+      eaterId: eaterClerk.id,
+      qty: 1,
+      status: "picked_up",
+      pickupCode: "9911",
+      pickedUpAt: new Date(Date.now() - 30 * 60_000),
     });
 
     await page.goto("/");
@@ -210,9 +221,12 @@ test.describe("baker today screen", () => {
     await expect(claimed).toContainText("Hungry Eater");
     await expect(claimed).toContainText("Oven Miche");
 
-    // Recently picked up.
-    const pickedUp = page.getByTestId("section-recently-picked-up");
+    // Recent handoffs: per-claim row with the eater + a rate prompt
+    // (this baker hasn't rated yet).
+    const pickedUp = page.getByTestId("section-recent-handoffs");
     await expect(pickedUp).toContainText("Picked-up Country");
+    await expect(pickedUp).toContainText("Hungry Eater");
+    await expect(pickedUp.getByTestId("rate-handoff-up")).toBeVisible();
   });
 
   test("non-baker is bounced from /baker", async ({ page }) => {
@@ -280,7 +294,7 @@ test.describe("baker today screen", () => {
       "Nothing claimed yet.",
     );
     await expect(
-      page.getByTestId("section-recently-picked-up"),
+      page.getByTestId("section-recent-handoffs"),
     ).toContainText("No handoffs in the last 24 hours.");
   });
 });

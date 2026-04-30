@@ -52,9 +52,20 @@ export const TagPill = ({ tag, dim = false }: { tag: UiTag; dim?: boolean }) => 
   </span>
 );
 
+// Star line. The unrated case (reviews === 0) renders an explicit "no
+// ratings yet" line rather than "★ 0.0 (0)" — same outer span on every
+// path so layout doesn't shuffle. [LAW:dataflow-not-control-flow]
 export const Stars = ({ rating, reviews }: { rating: number; reviews: number }) => (
   <span className="text-xs text-stone-600">
-    <span className="text-amber-600">★</span> {rating.toFixed(1)}{" "}
-    <span className="text-stone-400">({reviews})</span>
+    {reviews === 0 ? (
+      <>
+        <span className="text-stone-400">★</span> No ratings yet
+      </>
+    ) : (
+      <>
+        <span className="text-amber-600">★</span> {rating.toFixed(1)}{" "}
+        <span className="text-stone-400">({reviews})</span>
+      </>
+    )}
   </span>
 );

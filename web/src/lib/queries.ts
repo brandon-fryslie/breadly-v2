@@ -30,16 +30,6 @@ function deriveType(tagSlugs: string[]): UiListing["type"] {
   return "sourdough";
 }
 
-// Deterministic placeholder rating until M2 ships ratings. Hash the baker
-// id into [4.5, 5.0]; review count into [12, 380].
-function placeholderRating(bakerId: string): { rating: number; reviews: number } {
-  let h = 0;
-  for (let i = 0; i < bakerId.length; i++) h = (h * 31 + bakerId.charCodeAt(i)) | 0;
-  const r = (Math.abs(h) % 51) / 100; // 0.00 - 0.50
-  const reviews = 12 + (Math.abs(h >> 8) % 369);
-  return { rating: 4.5 + r, reviews };
-}
-
 const SEED_EATER_ID = "user_seed_eater";
 
 export async function getEater(): Promise<UiEater> {
@@ -95,7 +85,21 @@ type ListingRow = {
   ready_at: Date | string;
   miles: number;
   tag_slugs: string[];
+  baker_rating: string | number | null;
+  baker_reviews: number;
 };
+
+// Per-baker rating aggregate, scoped to the listing's baker. Joined as a
+// LATERAL on every listing/schedule query so card and feed share the
+// same shape without a second round-trip per baker.
+// [LAW:one-source-of-truth]
+const BAKER_RATING_LATERAL = sql`
+  LEFT JOIN LATERAL (
+    SELECT AVG(score)::float AS avg_score, COUNT(*)::int AS review_count
+    FROM ratings
+    WHERE rated_id = l.baker_id
+  ) rating ON true
+`;
 
 const LISTING_QUERY_BODY = sql`
   SELECT
@@ -119,12 +123,23 @@ const LISTING_QUERY_BODY = sql`
        JOIN tags t ON t.id = lt.tag_id
        WHERE lt.listing_id = l.id),
       ARRAY[]::text[]
-    ) AS tag_slugs
+    ) AS tag_slugs,
+    rating.avg_score AS baker_rating,
+    COALESCE(rating.review_count, 0) AS baker_reviews
   FROM listings l
   JOIN baker_profiles bp ON bp.user_id = l.baker_id
   JOIN users u ON u.id = l.baker_id
+  ${BAKER_RATING_LATERAL}
   CROSS JOIN (SELECT location FROM users WHERE id = ${SEED_EATER_ID}) eater
 `;
+
+function bakerRatingFromRow(r: { baker_rating: string | number | null; baker_reviews: number }) {
+  const reviews = r.baker_reviews ?? 0;
+  return {
+    rating: reviews === 0 || r.baker_rating === null ? 0 : Number(r.baker_rating),
+    reviews,
+  };
+}
 
 function rowToListing(r: ListingRow): UiListing {
   const readyAt = typeof r.ready_at === "string" ? new Date(r.ready_at) : r.ready_at;
@@ -137,7 +152,7 @@ function rowToListing(r: ListingRow): UiListing {
     neighborhood: r.baker_neighborhood ?? "Boulder",
     bio: r.baker_bio,
     kitchenTags: r.tag_slugs.filter((t) => t.endsWith("-kitchen")),
-    ...placeholderRating(r.baker_id),
+    ...bakerRatingFromRow(r),
   };
   return {
     id: r.id,
@@ -187,6 +202,8 @@ type ScheduleRow = {
   tag_slugs: string[];
   day_offset: number;
   ready_time_label: string;
+  baker_rating: string | number | null;
+  baker_reviews: number;
 };
 
 // Forward 7-day schedule view for variant D. Both materialized listings
@@ -264,9 +281,16 @@ export async function getWeekSchedule(opts?: { radiusMi?: number }): Promise<UiS
            u.default_qty,
            u.tag_slugs,
            EXTRACT(DAY FROM u.ready_at - date_trunc('day', NOW()))::int AS day_offset,
-           to_char(u.ready_at, 'FMHH12:MIam') AS ready_time_label
+           to_char(u.ready_at, 'FMHH12:MIam') AS ready_time_label,
+           rating.avg_score AS baker_rating,
+           COALESCE(rating.review_count, 0) AS baker_reviews
     FROM union_all u
     JOIN baker_dist bd ON bd.user_id = u.baker_id
+    LEFT JOIN LATERAL (
+      SELECT AVG(score)::float AS avg_score, COUNT(*)::int AS review_count
+      FROM ratings
+      WHERE rated_id = u.baker_id
+    ) rating ON true
     WHERE bd.meters <= ${radiusMeters}
     ORDER BY u.ready_at
     LIMIT 200
@@ -281,7 +305,7 @@ export async function getWeekSchedule(opts?: { radiusMi?: number }): Promise<UiS
       neighborhood: r.baker_neighborhood ?? "Boulder",
       bio: r.baker_bio,
       kitchenTags: r.tag_slugs.filter((t) => t.endsWith("-kitchen")),
-      ...placeholderRating(r.baker_id),
+      ...bakerRatingFromRow(r),
     };
     return {
       id: r.id,

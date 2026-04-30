@@ -271,6 +271,46 @@ export const claims = pgTable(
   ],
 );
 
+// --- Ratings -------------------------------------------------------------
+//
+// One row per (rater, claim). Each handoff produces up to two ratings:
+// baker→eater and eater→baker. The discriminator is which side is the
+// rater — same table, same shape, no separate baker_ratings/eater_ratings
+// (one-type-per-behavior law).
+//
+// `score` is stored as 1–5. The current UI is thumbs-only (1 = down,
+// 5 = up); storing as 1–5 leaves room for a finer picker without a
+// schema migration. The (rater_id, claim_id) unique index makes
+// re-submits idempotent — the action runs the same INSERT every time
+// and the DB decides whether it's a new row or a no-op.
+// [LAW:dataflow-not-control-flow]
+
+export const ratings = pgTable(
+  "ratings",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    claimId: uuid("claim_id")
+      .notNull()
+      .references(() => claims.id, { onDelete: "cascade" }),
+    raterId: varchar("rater_id", { length: 64 })
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    ratedId: varchar("rated_id", { length: 64 })
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+
+    score: integer("score").notNull(),
+    comment: text("comment"),
+    tagSlugs: jsonb("tag_slugs").$type<string[]>().notNull().default([]),
+
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("ratings_rater_claim_idx").on(t.raterId, t.claimId),
+    index("ratings_rated_idx").on(t.ratedId),
+  ],
+);
+
 // --- Schedules -----------------------------------------------------------
 //
 // A schedule entry says "Country sourdough, every Tuesday + Friday at 6am,
@@ -325,3 +365,5 @@ export type NewListing = typeof listings.$inferInsert;
 export type Claim = typeof claims.$inferSelect;
 export type Schedule = typeof schedules.$inferSelect;
 export type EaterPreferences = typeof eaterPreferences.$inferSelect;
+export type Rating = typeof ratings.$inferSelect;
+export type NewRating = typeof ratings.$inferInsert;

@@ -11,7 +11,7 @@ import { sql, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { bakerProfiles, type BakerProfile } from "@/db/schema";
 
-export type TodayBucket = "in_oven" | "coming_up" | "recently_picked";
+export type TodayBucket = "in_oven" | "coming_up";
 
 export type TodayListing = {
   id: string;
@@ -38,12 +38,32 @@ export type ClaimedSeat = {
   eaterName: string;
 };
 
+// One row per (claim picked-up in the last 24h). Each row carries the
+// baker's own rating for that claim if they've already submitted one,
+// so the page renders the prompt or the receipt from the same shape.
+// [LAW:dataflow-not-control-flow]
+export type RecentHandoff = {
+  claimId: string;
+  listingId: string;
+  listingName: string;
+  eaterId: string;
+  eaterName: string;
+  pickedUpAt: Date;
+  myRating: { score: number; comment: string | null } | null;
+};
+
+export type BakerRating = {
+  rating: number; // average score, 1.0–5.0; 0 when reviews=0
+  reviews: number;
+};
+
 export type BakerToday = {
   profile: BakerProfile;
+  rating: BakerRating;
   inOven: TodayListing[];
   comingUpToday: TodayListing[];
   claimedSeats: ClaimedSeat[];
-  recentlyPickedUp: TodayListing[];
+  recentHandoffs: RecentHandoff[];
 };
 
 type ListingRow = {
@@ -96,7 +116,7 @@ export async function getBakerToday(userId: string): Promise<BakerToday> {
     );
   }
 
-  const [listingRows, claimRows] = await Promise.all([
+  const [listingRows, claimRows, handoffRows, ratingRow] = await Promise.all([
     db.execute<ListingRow>(sql`
       SELECT
         l.id,
@@ -115,9 +135,6 @@ export async function getBakerToday(userId: string): Promise<BakerToday> {
                AND l.ready_at <= NOW() + INTERVAL '12 hours'
                AND l.ready_at > NOW() - INTERVAL '1 hour'
             THEN 'coming_up'
-          WHEN l.status = 'picked_up'
-               AND l.updated_at >= NOW() - INTERVAL '24 hours'
-            THEN 'recently_picked'
         END AS bucket,
         COALESCE(
           (SELECT array_agg(t.slug ORDER BY t.slug)
@@ -133,8 +150,6 @@ export async function getBakerToday(userId: string): Promise<BakerToday> {
           OR (l.status = 'scheduled'
               AND l.ready_at <= NOW() + INTERVAL '12 hours'
               AND l.ready_at > NOW() - INTERVAL '1 hour')
-          OR (l.status = 'picked_up'
-              AND l.updated_at >= NOW() - INTERVAL '24 hours')
         )
     `),
     db.execute<{
@@ -161,6 +176,48 @@ export async function getBakerToday(userId: string): Promise<BakerToday> {
         AND c.status = 'active'
       ORDER BY c.created_at DESC
     `),
+    // Recent handoffs (last 24h, picked_up). LEFT JOIN ratings filtered to
+    // this baker's row gives one row per claim with optional self-rating.
+    // [LAW:one-source-of-truth] for "did I rate this handoff?"
+    db.execute<{
+      claim_id: string;
+      listing_id: string;
+      listing_name: string;
+      eater_id: string;
+      eater_name: string;
+      picked_up_at: string | Date;
+      my_score: number | null;
+      my_comment: string | null;
+    }>(sql`
+      SELECT
+        c.id AS claim_id,
+        l.id AS listing_id,
+        l.name AS listing_name,
+        u.id AS eater_id,
+        u.display_name AS eater_name,
+        c.picked_up_at,
+        r.score AS my_score,
+        r.comment AS my_comment
+      FROM claims c
+      JOIN listings l ON l.id = c.listing_id
+      JOIN users u ON u.id = c.eater_id
+      LEFT JOIN ratings r
+        ON r.claim_id = c.id AND r.rater_id = ${userId}
+      WHERE l.baker_id = ${userId}
+        AND c.status = 'picked_up'
+        AND c.picked_up_at >= NOW() - INTERVAL '24 hours'
+      ORDER BY c.picked_up_at DESC
+    `),
+    // Aggregate rating for this baker (where they are rated_id). Always
+    // returns one row — COALESCE collapses the no-ratings case to 0/0.
+    // [LAW:one-source-of-truth] replaces the placeholderRating helper.
+    db.execute<{ avg_score: string | null; review_count: number }>(sql`
+      SELECT
+        AVG(score)::float AS avg_score,
+        COUNT(*)::int AS review_count
+      FROM ratings
+      WHERE rated_id = ${userId}
+    `),
   ]);
 
   const listings = listingRows.map(rowToTodayListing);
@@ -176,10 +233,6 @@ export async function getBakerToday(userId: string): Promise<BakerToday> {
     .filter((l) => l.bucket === "coming_up")
     .sort((a, b) => a.readyAt.getTime() - b.readyAt.getTime());
 
-  const recentlyPickedUp = listings
-    .filter((l) => l.bucket === "recently_picked")
-    .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
-
   const claimedSeats: ClaimedSeat[] = claimRows.map((r) => ({
     claimId: r.claim_id,
     listingId: r.listing_id,
@@ -190,5 +243,32 @@ export async function getBakerToday(userId: string): Promise<BakerToday> {
     eaterName: r.eater_name,
   }));
 
-  return { profile, inOven, comingUpToday, claimedSeats, recentlyPickedUp };
+  const recentHandoffs: RecentHandoff[] = handoffRows.map((r) => ({
+    claimId: r.claim_id,
+    listingId: r.listing_id,
+    listingName: r.listing_name,
+    eaterId: r.eater_id,
+    eaterName: r.eater_name,
+    pickedUpAt: toDate(r.picked_up_at),
+    myRating:
+      r.my_score === null
+        ? null
+        : { score: r.my_score, comment: r.my_comment },
+  }));
+
+  const reviews = ratingRow[0]?.review_count ?? 0;
+  const avg = ratingRow[0]?.avg_score;
+  const rating: BakerRating = {
+    reviews,
+    rating: reviews === 0 || avg === null ? 0 : Number(avg),
+  };
+
+  return {
+    profile,
+    rating,
+    inOven,
+    comingUpToday,
+    claimedSeats,
+    recentHandoffs,
+  };
 }
