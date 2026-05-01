@@ -1,9 +1,7 @@
 // Smoke tests for /api/uploads/sign — auth + capability + validation
-// gates. The actual signing path requires ADC + a real bucket, so we only
-// assert it when GOOGLE_APPLICATION_CREDENTIALS or
-// GOOGLE_APPLICATION_CREDENTIALS_JSON looks configured. Otherwise we stop
-// at the validation layer (which is the part this ticket needs to enforce
-// at one boundary). [LAW:single-enforcer]
+// gates, plus a live-signing assertion. ADC is required; the suite-wide
+// gate in tests/global-setup.ts fails the run if it's missing, so this
+// file does not branch on credential presence. [LAW:single-enforcer]
 
 import { test, expect } from "@playwright/test";
 import { clerk, setupClerkTestingToken } from "@clerk/testing/playwright";
@@ -31,11 +29,6 @@ async function deleteClerkUserByEmail(email: string) {
   const list = await c.users.getUserList({ emailAddress: [email] });
   for (const u of list.data) await c.users.deleteUser(u.id);
 }
-
-const hasAdc = Boolean(
-  process.env.GOOGLE_APPLICATION_CREDENTIALS ||
-    process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON,
-);
 
 test.describe("/api/uploads/sign", () => {
   const createdEmails: string[] = [];
@@ -118,8 +111,6 @@ test.describe("/api/uploads/sign", () => {
   test("returns a signed URL for a baker with a valid content type", async ({
     page,
   }) => {
-    test.skip(!hasAdc, "no ADC configured — skipping live-signing assertion");
-
     const email = uniqueEmail("sign-baker-ok");
     createdEmails.push(email);
     const cu = await createClerkUser(email);
