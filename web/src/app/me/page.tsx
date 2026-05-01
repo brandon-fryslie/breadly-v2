@@ -4,6 +4,7 @@
 // Auth is enforced by `proxy.ts` which wraps `/me(.*)` in `auth.protect()`.
 
 import { auth } from "@clerk/nextjs/server";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { db } from "@/db/client";
 import { users, bakerProfiles } from "@/db/schema";
@@ -91,6 +92,20 @@ export default async function MePage() {
             </span>
           </li>
         </ul>
+      </section>
+
+      <section className="rounded-xl border border-stone-200 bg-white px-6 py-5">
+        <h2 className="text-lg font-semibold mb-1">Eater preferences</h2>
+        <p className="text-sm text-stone-600 mb-4">
+          Pick the loaves you want to see, hide deal-breakers, and set your
+          search radius.
+        </p>
+        <Link
+          href="/me/preferences"
+          className="inline-block bg-stone-900 text-white rounded-md px-4 py-2 hover:bg-stone-700"
+        >
+          Edit preferences
+        </Link>
       </section>
 
       {me.canBake ? null : (
