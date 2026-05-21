@@ -3,15 +3,20 @@
 import { APIProvider, Map as GoogleMap } from "@vis.gl/react-google-maps";
 
 // [LAW:types-are-the-program] A missing key is external-config input at a trust
-// boundary. Validate once here so the rest of the component sees a guaranteed
-// `string`; the alternative `!` laundered `undefined` into Google's apiKey and
-// produced a silently broken map instead of a loud failure.
-const API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
-if (!API_KEY) {
-  throw new Error(
-    "NEXT_PUBLIC_GOOGLE_MAPS_API_KEY is not set — copy web/.env.local.example to web/.env.local and add a Maps JavaScript API key.",
-  );
+// boundary. This getter's `string` return type is the promise; the throw is the
+// only escape, so callers can never launder `undefined` into Google's apiKey
+// (which silently renders a broken map instead of failing loudly).
+function mapsApiKey(): string {
+  const key = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+  if (!key) {
+    throw new Error(
+      "NEXT_PUBLIC_GOOGLE_MAPS_API_KEY is not set — copy web/.env.local.example to web/.env.local and add a Maps JavaScript API key.",
+    );
+  }
+  return key;
 }
+
+const API_KEY = mapsApiKey();
 
 // Boulder, CO — default center for all maps in the app
 export const BOULDER_CENTER = { lat: 40.015, lng: -105.2705 };
