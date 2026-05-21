@@ -38,10 +38,15 @@ export function Map({
   className,
   children,
 }: MapProps) {
+  // [LAW:one-source-of-truth] The Map ID is per-GCP-project config like the API
+  // key — sourced from env, not a source constant. Undefined flows straight to
+  // the optional prop (Google's default raster style); a value enables cloud
+  // styling + Advanced Markers (the pins ED5 adds later).
+  const mapId = process.env.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID;
   return (
     <APIProvider apiKey={mapsApiKey()}>
       <GoogleMap
-        mapId="breadly-map"
+        mapId={mapId}
         center={center}
         zoom={zoom}
         className={className}
