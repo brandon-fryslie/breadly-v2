@@ -6,6 +6,11 @@ import { APIProvider, Map as GoogleMap } from "@vis.gl/react-google-maps";
 // boundary. This getter's `string` return type is the promise; the throw is the
 // only escape, so callers can never launder `undefined` into Google's apiKey
 // (which silently renders a broken map instead of failing loudly).
+//
+// [LAW:dataflow-not-control-flow] Read at render, not module load. The key is
+// needed when a map is drawn, so validation lives at that boundary — keeping
+// imports side-effect-free (BOULDER_CENTER is importable without a key, and
+// `next build` stays green), matching the lazy-env convention in db/client.ts.
 function mapsApiKey(): string {
   const key = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
   if (!key) {
@@ -15,8 +20,6 @@ function mapsApiKey(): string {
   }
   return key;
 }
-
-const API_KEY = mapsApiKey();
 
 // Boulder, CO — default center for all maps in the app
 export const BOULDER_CENTER = { lat: 40.015, lng: -105.2705 };
@@ -36,7 +39,7 @@ export function Map({
   children,
 }: MapProps) {
   return (
-    <APIProvider apiKey={API_KEY}>
+    <APIProvider apiKey={mapsApiKey()}>
       <GoogleMap
         mapId="breadly-map"
         center={center}
