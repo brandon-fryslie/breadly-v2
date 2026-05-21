@@ -20,6 +20,14 @@ COPY . .
 ARG NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=""
 ENV NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}
 
+# Google Maps key (required) + optional Map ID — same story: NEXT_PUBLIC_* is
+# inlined into the client bundle, so the deployed map only works if these are
+# present at build. CI passes them via --build-arg.
+ARG NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=""
+ENV NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=${NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}
+ARG NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID=""
+ENV NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID=${NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID}
+
 RUN npm run build
 
 # ----- runtime ------------------------------------------------------------

@@ -4,6 +4,10 @@ steps:
       - build
       - --build-arg
       - NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${_CLERK_PK}
+      - --build-arg
+      - NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=${_MAPS_API_KEY}
+      - --build-arg
+      - NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID=${_MAPS_MAP_ID}
       - -t
       - ${_IMG}
       - .
@@ -13,4 +17,6 @@ options:
   logging: CLOUD_LOGGING_ONLY
 substitutions:
   _CLERK_PK: ""
+  _MAPS_API_KEY: ""
+  _MAPS_MAP_ID: ""
   _IMG: ""
