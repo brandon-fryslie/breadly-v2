@@ -1,11 +1,12 @@
-import { isDevModeEnabled } from "@/lib/dev-tools-gate";
-import { notFound } from "next/navigation";
+import { requireDevTools } from "@/lib/dev-tools-gate";
 import { MapVerify } from "./map-verify";
 
 export const dynamic = "force-dynamic";
 
 export default async function MapTestPage() {
-  if (!isDevModeEnabled()) notFound();
+  // [LAW:single-enforcer] One gate for all /dev-tools access (env + auth +
+  // canDev). No page reimplements a weaker subset of it.
+  await requireDevTools();
   return (
     <main className="max-w-3xl mx-auto px-6 py-10 space-y-6">
       <header>
