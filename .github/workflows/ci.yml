@@ -7,8 +7,12 @@ on:
 
 env:
   NODE_VERSION: "22"
-  # Build-time placeholder; production uses Secret Manager via Cloud Run.
+  # Build-time placeholders; the deploy job injects the real values via
+  # --build-arg. The map page is force-dynamic + gated so it isn't rendered
+  # during `next build`, but a non-empty key keeps the build robust if a map
+  # ever lands on a statically-rendered route.
   NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: pk_test_ci_placeholder
+  NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: AIza_ci_placeholder
 
 jobs:
   test:
@@ -86,6 +90,10 @@ jobs:
   #   GCP_REGION             e.g. us-central1
   #   ARTIFACT_REPO          e.g. breadly-dev
   #   CLERK_PUBLISHABLE_KEY  pk_test_... (baked into the client bundle)
+  #   GOOGLE_MAPS_API_KEY    AIza... (baked into the client bundle; required for
+  #                          the map to render on the deployed app)
+  # Optional repo variable (vars.*, not a secret — it's non-sensitive):
+  #   GOOGLE_MAPS_MAP_ID     cloud Map ID for styling + Advanced Markers
   build-and-deploy:
     name: Build image + deploy to Cloud Run (dev)
     if: github.ref == 'refs/heads/main'
@@ -115,6 +123,8 @@ jobs:
         run: |
           docker build \
             --build-arg NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${{ secrets.CLERK_PUBLISHABLE_KEY }} \
+            --build-arg NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=${{ secrets.GOOGLE_MAPS_API_KEY }} \
+            --build-arg NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID=${{ vars.GOOGLE_MAPS_MAP_ID }} \
             -t "$IMAGE_TAG" .
           docker push "$IMAGE_TAG"
 

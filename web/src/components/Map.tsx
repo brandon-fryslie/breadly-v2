@@ -15,7 +15,10 @@ function mapsApiKey(): string {
   const key = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
   if (!key) {
     throw new Error(
-      "NEXT_PUBLIC_GOOGLE_MAPS_API_KEY is not set — copy web/.env.local.example to web/.env.local and add a Maps JavaScript API key.",
+      "NEXT_PUBLIC_GOOGLE_MAPS_API_KEY is not set. Locally: copy " +
+        "web/.env.local.example to web/.env.local and add a Maps JavaScript " +
+        "API key. Deployed: it is inlined at build time, so set the " +
+        "GOOGLE_MAPS_API_KEY build secret (see .github/workflows/ci.yml).",
     );
   }
   return key;
@@ -39,10 +42,14 @@ export function Map({
   children,
 }: MapProps) {
   // [LAW:one-source-of-truth] The Map ID is per-GCP-project config like the API
-  // key — sourced from env, not a source constant. Undefined flows straight to
-  // the optional prop (Google's default raster style); a value enables cloud
+  // key — sourced from env, not a source constant. A value enables cloud
   // styling + Advanced Markers (the pins ED5 adds later).
-  const mapId = process.env.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID;
+  //
+  // [LAW:types-are-the-program] Collapse blank/whitespace to undefined at the
+  // read. An unset env var arrives as "" (the `KEY=` form, the Dockerfile ARG
+  // default, an empty CI var) — `mapId=""` is an illegal in-between Google may
+  // treat as a bad ID, so the rest of the code only ever sees real-id-or-absent.
+  const mapId = process.env.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID?.trim() || undefined;
   return (
     <APIProvider apiKey={mapsApiKey()}>
       <GoogleMap
